@@ -1,0 +1,115 @@
+[gd_scene load_steps=3 format=3]
+
+[ext_resource type="Script" path="res://world/game_arena.gd" id="1"]
+[ext_resource type="PackedScene" path="res://world/arena_world.tscn" id="2"]
+
+[node name="GameArena" type="Node2D"]
+visible = false
+script = ExtResource("1")
+
+[node name="ArenaWorld" parent="." instance=ExtResource("2")]
+
+[node name="Characters" type="Node2D" parent="."]
+
+[node name="Camera2D" type="Camera2D" parent="."]
+enabled = false
+
+[node name="HUD" type="CanvasLayer" parent="."]
+visible = false
+layer = 2
+
+[node name="Layout" type="Control" parent="HUD"]
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+
+[node name="Top" type="VBoxContainer" parent="HUD/Layout"]
+layout_mode = 0
+offset_left = 24.0
+offset_top = 16.0
+offset_right = 880.0
+offset_bottom = 84.0
+mouse_filter = 2
+
+[node name="Title" type="Label" parent="HUD/Layout/Top"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_font_sizes/font_size = 21
+
+[node name="Phase" type="Label" parent="HUD/Layout/Top"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_colors/font_color = Color(0.65, 0.72, 0.82, 1)
+theme_override_font_sizes/font_size = 17
+
+[node name="Players" type="HBoxContainer" parent="HUD/Layout/Top"]
+layout_mode = 2
+theme_override_constants/separation = 28
+mouse_filter = 2
+
+[node name="PlayerOne" type="Label" parent="HUD/Layout/Top/Players"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_colors/font_color = Color(0.345, 0.65, 1, 1)
+
+[node name="PlayerTwo" type="Label" parent="HUD/Layout/Top/Players"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_colors/font_color = Color(1, 0.674, 0.384, 1)
+
+[node name="Countdown" type="Label" parent="HUD/Layout"]
+unique_name_in_owner = true
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+theme_override_colors/font_shadow_color = Color(0, 0, 0, 0.9)
+theme_override_constants/shadow_offset_x = 4
+theme_override_constants/shadow_offset_y = 4
+theme_override_font_sizes/font_size = 112
+horizontal_alignment = 1
+vertical_alignment = 1
+
+[node name="Bottom" type="VBoxContainer" parent="HUD/Layout"]
+layout_mode = 1
+anchors_preset = 12
+anchor_top = 1.0
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_left = 24.0
+offset_top = -80.0
+offset_right = -24.0
+offset_bottom = -16.0
+grow_horizontal = 2
+grow_vertical = 0
+theme_override_constants/separation = 8
+mouse_filter = 2
+
+[node name="Controls" type="Label" parent="HUD/Layout/Bottom"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_colors/font_color = Color(0.75, 0.8, 0.89, 1)
+
+[node name="Actions" type="HBoxContainer" parent="HUD/Layout/Bottom"]
+layout_mode = 2
+theme_override_constants/separation = 12
+mouse_filter = 2
+
+[node name="ReturnButton" type="Button" parent="HUD/Layout/Bottom/Actions"]
+unique_name_in_owner = true
+layout_mode = 2
+focus_mode = 0
+text = "Return to lobby"
+
+[node name="DisconnectButton" type="Button" parent="HUD/Layout/Bottom/Actions"]
+unique_name_in_owner = true
+layout_mode = 2
+focus_mode = 0
+text = "Disconnect"

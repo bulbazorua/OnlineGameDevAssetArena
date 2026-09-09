@@ -1,0 +1,40 @@
+[gd_scene load_steps=7 format=3]
+
+[ext_resource type="Script" path="res://main.gd" id="1_main"]
+[ext_resource type="Script" path="res://network/game_connection.gd" id="2_connection"]
+[ext_resource type="PackedScene" path="res://ui/lobby_screen.tscn" id="3_lobby"]
+
+[ext_resource type="PackedScene" path="res://ui/character_select_screen.tscn" id="4_selection"]
+
+[ext_resource type="PackedScene" path="res://ui/arena_select_screen.tscn" id="5_arena"]
+
+[ext_resource type="PackedScene" path="res://world/game_arena.tscn" id="6_game"]
+
+[node name="Main" type="Node"]
+script = ExtResource("1_main")
+
+[node name="GameConnection" type="Node" parent="."]
+script = ExtResource("2_connection")
+
+[node name="GameArena" parent="." instance=ExtResource("6_game")]
+
+[node name="UI" type="CanvasLayer" parent="."]
+
+[node name="Screens" type="Control" parent="UI"]
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="LobbyScreen" parent="UI/Screens" instance=ExtResource("3_lobby")]
+layout_mode = 1
+
+[node name="CharacterSelectScreen" parent="UI/Screens" instance=ExtResource("4_selection")]
+visible = false
+layout_mode = 1
+
+[node name="ArenaSelectScreen" parent="UI/Screens" instance=ExtResource("5_arena")]
+visible = false
+layout_mode = 1

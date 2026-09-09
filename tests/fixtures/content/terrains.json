@@ -1,0 +1,1 @@
+{"schema_version":1,"terrains":[{"id":1,"key":"grass","display_name":"Grass","symbol":".","walkable":true},{"id":5,"key":"stone","display_name":"Stone","symbol":"#","walkable":false}]}

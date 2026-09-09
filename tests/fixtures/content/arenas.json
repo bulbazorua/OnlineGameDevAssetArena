@@ -1,0 +1,1 @@
+{"schema_version":1,"arenas":[{"id":1,"key":"fixture","display_name":"Fixture","width":4,"height":3,"tile_size":32,"rows":["####","#..#","####"],"spawns":[[1,1],[2,1]]}]}

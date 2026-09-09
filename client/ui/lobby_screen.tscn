@@ -1,0 +1,148 @@
+[gd_scene load_steps=4 format=3]
+
+[ext_resource type="Script" path="res://ui/lobby_screen.gd" id="1_main"]
+[ext_resource type="Script" path="res://arena.gd" id="2_arena"]
+
+[sub_resource type="StyleBoxFlat" id="StyleBox_card"]
+bg_color = Color(0.10, 0.13, 0.19, 1)
+border_width_left = 1
+border_width_top = 1
+border_width_right = 1
+border_width_bottom = 1
+border_color = Color(0.22, 0.29, 0.40, 1)
+corner_radius_top_left = 16
+corner_radius_top_right = 16
+corner_radius_bottom_right = 16
+corner_radius_bottom_left = 16
+
+[node name="LobbyScreen" type="Control"]
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+script = ExtResource("1_main")
+
+[node name="Background" type="ColorRect" parent="."]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+color = Color(0.055, 0.075, 0.11, 1)
+
+[node name="Center" type="CenterContainer" parent="."]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="Card" type="PanelContainer" parent="Center"]
+custom_minimum_size = Vector2(740, 0)
+layout_mode = 2
+theme_override_styles/panel = SubResource("StyleBox_card")
+
+[node name="Margin" type="MarginContainer" parent="Center/Card"]
+layout_mode = 2
+theme_override_constants/margin_left = 28
+theme_override_constants/margin_top = 28
+theme_override_constants/margin_right = 28
+theme_override_constants/margin_bottom = 28
+
+[node name="Content" type="VBoxContainer" parent="Center/Card/Margin"]
+layout_mode = 2
+theme_override_constants/separation = 12
+
+[node name="Title" type="Label" parent="Center/Card/Margin/Content"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 30
+text = "Asset Arena"
+
+[node name="Subtitle" type="Label" parent="Center/Card/Margin/Content"]
+layout_mode = 2
+theme_override_colors/font_color = Color(0.66, 0.73, 0.84, 1)
+text = "Two players. Everyone else can watch."
+
+[node name="AddressRow" type="HBoxContainer" parent="Center/Card/Margin/Content"]
+layout_mode = 2
+theme_override_constants/separation = 16
+
+[node name="Host" type="VBoxContainer" parent="Center/Card/Margin/Content/AddressRow"]
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="Caption" type="Label" parent="Center/Card/Margin/Content/AddressRow/Host"]
+layout_mode = 2
+text = "Host address"
+
+[node name="HostAddress" type="LineEdit" parent="Center/Card/Margin/Content/AddressRow/Host"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 38)
+layout_mode = 2
+text = "127.0.0.1"
+placeholder_text = "Host IP address"
+
+[node name="Port" type="VBoxContainer" parent="Center/Card/Margin/Content/AddressRow"]
+layout_mode = 2
+
+[node name="Caption" type="Label" parent="Center/Card/Margin/Content/AddressRow/Port"]
+layout_mode = 2
+text = "Port"
+
+[node name="HostPort" type="SpinBox" parent="Center/Card/Margin/Content/AddressRow/Port"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(110, 38)
+layout_mode = 2
+min_value = 1.0
+max_value = 65535.0
+value = 7000.0
+rounded = true
+
+[node name="JoinAsAudience" type="CheckButton" parent="Center/Card/Margin/Content"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "Join as audience"
+
+[node name="StatusLabel" type="Label" parent="Center/Card/Margin/Content"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_font_sizes/font_size = 23
+text = "Disconnected"
+
+[node name="DetailLabel" type="Label" parent="Center/Card/Margin/Content"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 36)
+layout_mode = 2
+theme_override_colors/font_color = Color(0.66, 0.73, 0.84, 1)
+text = "Use 127.0.0.1 for a host running on this computer."
+autowrap_mode = 2
+
+[node name="Arena" type="Control" parent="Center/Card/Margin/Content"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 190)
+layout_mode = 2
+mouse_filter = 2
+script = ExtResource("2_arena")
+
+[node name="RosterLabel" type="Label" parent="Center/Card/Margin/Content"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "Connect to see the arena"
+
+[node name="StartSelectionButton" type="Button" parent="Center/Card/Margin/Content"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 44)
+layout_mode = 2
+text = "Start character selection"
+disabled = true
+
+[node name="ConnectButton" type="Button" parent="Center/Card/Margin/Content"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 44)
+layout_mode = 2
+text = "Connect"
