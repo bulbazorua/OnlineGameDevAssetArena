@@ -25,7 +25,7 @@ func _ready() -> void:
 	if OS.is_debug_build() and "--dev" in OS.get_cmdline_user_args():
 		var overlay = DEBUG_OVERLAY_SCENE.instantiate()
 		add_child(overlay)
-		overlay.configure(network)
+		overlay.configure(network, game_arena)
 	network.connection_changed.connect(_display_connection)
 	network.session_changed.connect(_display_session)
 	network.world_changed.connect(game_arena.apply_world)

@@ -4,6 +4,8 @@ ODIN ?= odin
 GODOT ?= godot
 CLIENT_ARGS ?=
 DEV ?= 0
+AI_DEBUG ?= 1
+REPLAY ?= latest
 PYTHON ?= python3
 SERVER_BIND ?= 127.0.0.1
 SERVER_HOST ?= 127.0.0.1
@@ -26,7 +28,10 @@ HEADLESS ?= 0
 DEV_RUN_SECONDS ?= 0
 
 .PHONY: help build_server run_server run_client run_audience check_client check_session check_connection check_selection check_content check_arena_content check_arena_selection check_movement import_client check ccx cc
-.PHONY: dev_arena check_dev check_ai check_character_ai
+.PHONY: dev_arena check_dev check_ai check_character_ai check_collision_overlay
+.PHONY: ai_debugger check_ai_debugger
+.PHONY: purge_logs check_log_cleanup
+.PHONY: replay
 .PHONY: import_tiny_swords check_tiny_swords_assets check_tiny_swords
 .PHONY: check_land check_camera check_audience_delay
 .PHONY: character_harness process_character check_character_contract check_asset_pipeline
@@ -35,6 +40,11 @@ DEV_RUN_SECONDS ?= 0
 .PHONY: player_harness process_player check_player_harness prepare_players check_trainers
 
 help:
+	@echo "make replay [REPLAY=/path/to/match.replay.jsonl] - pause, play, seek recorded arena + AI traces"
+	@echo "make purge_logs - preview expired log cleanup; tools/purge_logs.py --apply deletes logs older than 24 hours"
+	@echo "make ai_debugger P1=archer P2=orc - arena + two native AI thread debuggers; AI_DEBUG=0 hides them"
+	@echo "make check_collision_overlay - verify dev collision filters, geometry, cameras and audience views"
+	@echo "Dev clients: F3 toggles colliders; F4 opens terrain/building/player/character filters"
 	@echo "make check_character_ai - verify autonomous idle/walk and delayed audience state"
 	@echo "SEED=42 sets a reproducible character AI seed for run_server or dev_arena"
 	@echo "make check_trainers - verify arena trainers, host-timed summoning and audience views"
@@ -89,7 +99,22 @@ run_server: build_server
 	./build/server --bind=$(SERVER_BIND) --port=$(SERVER_PORT) --content-dir="$(CONTENT_DIR)" --audience-delay="$(AUDIENCE_DELAY)" --seed="$(SEED)"
 
 dev_arena:
-	$(PYTHON) tools/dev_session.py --p1="$(P1)" --p2="$(P2)" --arena="$(ARENA)" --audience="$(AUDIENCE)" --audience-delay="$(AUDIENCE_DELAY)" --seed="$(SEED)" --countdown="$(COUNTDOWN)" --watch="$(WATCH)" --godot="$(GODOT)" --odin="$(ODIN)" --run-seconds="$(DEV_RUN_SECONDS)" $(if $(filter 1,$(HEADLESS)),--headless)
+	$(PYTHON) tools/dev_session.py --p1="$(P1)" --p2="$(P2)" --arena="$(ARENA)" --audience="$(AUDIENCE)" --audience-delay="$(AUDIENCE_DELAY)" --seed="$(SEED)" --countdown="$(COUNTDOWN)" --watch="$(WATCH)" --godot="$(GODOT)" --odin="$(ODIN)" --ai-debug="$(AI_DEBUG)" --run-seconds="$(DEV_RUN_SECONDS)" $(if $(filter 1,$(HEADLESS)),--headless)
+
+ai_debugger: dev_arena
+
+replay:
+	$(PYTHON) tools/open_replay.py --godot="$(GODOT)" --replay="$(REPLAY)"
+
+purge_logs:
+	$(PYTHON) tools/purge_logs.py --dry-run
+
+check_log_cleanup:
+	$(PYTHON) tests/log_cleanup_check.py
+
+check_ai_debugger: build_server check_session
+	$(ODIN) test server -debug -out:build/ai_debug_tests -extra-linker-flags:"-L$(abspath build/deps)"
+	$(PYTHON) tests/ai_debugger_check.py --godot="$(GODOT)" --odin="$(ODIN)"
 
 run_client: import_runtime_client
 	$(GODOT) --path client $(CLIENT_ARGS) -- --host=$(SERVER_HOST) --port=$(SERVER_PORT) $(if $(filter 1,$(DEV)),--dev)
@@ -146,6 +171,10 @@ check_land: build_server check_client check_session
 check_camera: build_server check_client
 	$(GODOT) --headless --path client --script $(abspath tests/camera_check.gd) -- --server=$(abspath build/server)
 
+check_collision_overlay: build_server check_client
+	$(GODOT) --headless --path client --script $(abspath tests/collision_overlay_check.gd) -- --server=$(abspath build/server) --dev
+	$(GODOT) --headless --path client --script $(abspath tests/collision_overlay_check.gd) -- --server=$(abspath build/server)
+
 check_audience_delay: build_server check_client check_session
 	$(GODOT) --headless --path client --script $(abspath tests/audience_delay_check.gd) -- --server=$(abspath build/server)
 
@@ -191,7 +220,7 @@ check_trainers: build_server check_client
 check_character_ai: build_server check_client check_session
 	$(GODOT) --headless --path client --script $(abspath tests/character_ai_check.gd) -- --server=$(abspath build/server)
 
-check: check_character_ai check_trainers check_player_harness check_character_contract check_asset_pipeline check_character_modules check_playable_characters check_tiny_swords check_content check_arena_content check_connection check_selection check_arena_selection check_movement check_land check_camera check_audience_delay check_dev
+check: check_log_cleanup check_ai_debugger check_collision_overlay check_character_ai check_trainers check_player_harness check_character_contract check_asset_pipeline check_character_modules check_playable_characters check_tiny_swords check_content check_arena_content check_connection check_selection check_arena_selection check_movement check_land check_camera check_audience_delay check_dev
 
 ccx:
 	codex --dangerously-bypass-approvals-and-sandbox

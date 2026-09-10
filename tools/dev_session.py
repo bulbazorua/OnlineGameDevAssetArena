@@ -77,6 +77,11 @@ class DevSessionRunner:
         self.directory = ROOT / "build/dev" / f"{time.strftime('%Y%m%d-%H%M%S')}-{os.getpid()}"
         self.directory.mkdir(parents=True)
         self.children: list[subprocess.Popen] = []
+        self.ai_children: dict[str, subprocess.Popen] = {}
+        self.closed_ai: set[str] = set()
+        self.trace_directory: Path | None = None
+        self.ai_run = ""
+        self.starts = 0
         self.active: Path | None = None
         self.generation = 0
         self.visual_generation = 0
@@ -90,10 +95,12 @@ class DevSessionRunner:
     def log(message: str) -> None:
         print(f"[dev] {message}", flush=True)
 
-    def spawn(self, command: list[str], log: Path, cwd: Path = ROOT) -> subprocess.Popen:
+    def spawn(self, command: list[str], log: Path, cwd: Path = ROOT, ai_slot: str | None = None) -> subprocess.Popen:
         with log.open("w") as stream:
             process = subprocess.Popen(command, cwd=cwd, stdout=stream, stderr=subprocess.STDOUT, start_new_session=True)
         self.children.append(process)
+        if ai_slot is not None:
+            self.ai_children[ai_slot] = process
         return process
 
     @staticmethod
@@ -115,6 +122,7 @@ class DevSessionRunner:
         for process in reversed(self.children):
             self.stop(process)
         self.children.clear()
+        self.ai_children.clear()
 
     def checked(self, command: list[str], log: Path, cwd: Path = ROOT) -> None:
         process = self.spawn(command, log, cwd)
@@ -181,8 +189,17 @@ class DevSessionRunner:
         raise RuntimeError(f"Timed out waiting for {description}. See {self.directory}")
 
     def check_processes(self) -> None:
-        for process in self.children:
+        for process in self.children[:]:
             if process.poll() is not None:
+                slot = next((slot for slot, child in self.ai_children.items() if child is process), None)
+                if slot is not None:
+                    self.log(f"AI debugger {slot} closed (exit {process.returncode}); arena continues.")
+                    self.closed_ai.add(slot)
+                    del self.ai_children[slot]
+                    self.children.remove(process)
+                    if self.active is not None:
+                        self.publish_session()
+                    continue
                 raise RuntimeError(f"Owned process {process.pid} exited ({process.returncode}); stopping this session.")
 
     def status(self, slot: str) -> dict:
@@ -193,10 +210,17 @@ class DevSessionRunner:
         with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as reservation:
             reservation.bind(("127.0.0.1", 0))
             self.port = reservation.getsockname()[1]
-        for name in ["reload", *self.slots]:
+        for name in ["reload", *self.slots, "ai1", "ai2"]:
             (self.directory / f"{name}.json").unlink(missing_ok=True)
         self.visual_generation = 0
-        self.spawn([str(candidate / "host"), *self.scenario_arguments(candidate), f"--port={self.port}"], candidate / "host.log")
+        self.starts += 1
+        self.ai_run = f"{self.directory.name}/{candidate.name}/attempt-{self.starts}"
+        self.trace_directory = candidate / f"ai-traces-{self.starts}"
+        debug_args = []
+        if self.args.ai_debug:
+            self.trace_directory.mkdir()
+            debug_args = [f"--dev-ai-dir={self.trace_directory}", f"--dev-ai-run={self.ai_run}"]
+        self.spawn([str(candidate / "host"), *self.scenario_arguments(candidate), f"--port={self.port}", *debug_args], candidate / "host.log")
         self.wait_for(lambda: "Listening" in (candidate / "host.log").read_text(), 10, "host startup")
         for index, slot in enumerate(self.slots):
             command = [self.args.godot, "--path", str(candidate / "client")]
@@ -212,13 +236,38 @@ class DevSessionRunner:
                           15, f"{slot} Welcome/role {expected}")
         self.wait_for(lambda: all(self.status(slot).get("phase") == 3 and self.status(slot).get("summon_elapsed_ticks") == 90 and self.status(slot).get("audience") == self.args.audience
                                   for slot in self.slots), 10 + self.args.countdown + self.args.audience_delay, "arena snapshots in all windows")
+        if self.args.ai_debug:
+            for owner in (1, 2):
+                slot = f"ai{owner}"
+                if slot in self.closed_ai:
+                    continue
+                command = [self.args.godot, "--path", str(candidate / "client"), "res://dev/ai/ai_debug_window.tscn"]
+                if self.args.headless:
+                    command += ["--headless", "--max-fps", "60"]
+                command += ["--", "--dev", "--ai-debug", f"--ai-owner={owner}", f"--dev-ai-dir={self.trace_directory}",
+                            f"--dev-ai-run={self.ai_run}", f"--dev-session-dir={self.directory}", f"--dev-slot={slot}"]
+                child = self.spawn(command, candidate / f"{slot}.log", ai_slot=slot)
+                try:
+                    self.wait_for(lambda s=slot: s not in self.ai_children or (self.status(s).get("ready") and self.status(s).get("bound") and self.status(s).get("run_id") == self.ai_run),
+                                  15, f"{slot} debugger frame binding")
+                    if slot not in self.ai_children:
+                        self.log(f"AI debugger launch incomplete: {slot} exited before binding to its trace stream.")
+                except RuntimeError as error:
+                    self.log(f"AI debugger launch incomplete: {error}")
+                    self.stop(child)
+                    self.check_processes()
         self.active = candidate
         self.publish_session()
         self.log(f"Arena ready: {self.args.p1} vs {self.args.p2}, {self.args.arena}, {self.args.audience} audience, {self.args.audience_delay:g}s audience delay, AI seed {self.args.seed} (port {self.port}).")
+        if self.args.ai_debug:
+            self.log(f"QA recording: {self.trace_directory / 'match.replay.jsonl'} (open with make replay).")
 
     def publish_session(self) -> None:
         write_json(self.directory / "session.json", {"scenario": vars(self.args), "active": str(self.active),
                    "port": self.port, "pids": [process.pid for process in self.children], "slots": self.slots,
+                   "ai_slots": list(self.ai_children), "ai_pids": {slot: child.pid for slot, child in self.ai_children.items()},
+                   "ai_run": self.ai_run, "ai_trace_dir": str(self.trace_directory), "closed_ai": sorted(self.closed_ai),
+                   "replay_path": str(self.trace_directory / "match.replay.jsonl") if self.args.ai_debug else "",
                    "visual_generation": self.visual_generation})
 
     def apply_visuals(self, candidate: Path, resources: list[str], changed: set[str]) -> None:
@@ -239,13 +288,13 @@ class DevSessionRunner:
             temporary.replace(destination)
         self.visual_generation += 1
         write_json(self.directory / "reload.json", {"generation": self.visual_generation, "paths": resources})
-        self.wait_for(lambda: all(self.status(slot).get("visual_generation") == self.visual_generation for slot in self.slots),
+        self.wait_for(lambda: all(self.status(slot).get("visual_generation") == self.visual_generation for slot in [*self.slots, *self.ai_children]),
                       10, "visual reload acknowledgments")
-        errors = [self.status(slot).get("reload_error") for slot in self.slots if self.status(slot).get("reload_error")]
+        errors = [self.status(slot).get("reload_error") for slot in [*self.slots, *self.ai_children] if self.status(slot).get("reload_error")]
         if errors:
             raise RuntimeError("; ".join(errors))
         self.publish_session()
-        self.log(f"Visuals reloaded in all {len(self.slots)} windows; match and connections preserved.")
+        self.log(f"Visuals reloaded in {len(self.slots)} clients and {len(self.ai_children)} AI debuggers; match and connections preserved.")
 
     def reload(self, sources: dict[str, str]) -> None:
         changed = {path for path in sources.keys() | self.active_sources.keys() if sources.get(path) != self.active_sources.get(path)}
@@ -292,7 +341,8 @@ class DevSessionRunner:
         self.active_sources = sources
         if self.args.run_seconds:
             self.deadline = time.monotonic() + self.args.run_seconds
-        self.log("Watching client/ and server/. Ctrl+C or closing a window stops this run." if self.args.watch else "Watcher disabled. Ctrl+C or closing a window stops this run.")
+        self.log("Watching client/ and server/." if self.args.watch else "Watcher disabled.")
+        self.log("Ctrl+C or closing a game client stops this run. AI debugger windows may be closed independently.")
         observed = sources
         attempted = sources
         stable_since = time.monotonic()
@@ -318,6 +368,7 @@ def main() -> int:
     parser.add_argument("--p2", default="square")
     parser.add_argument("--arena", default="meadow_crossing")
     parser.add_argument("--audience", type=int, default=0)
+    parser.add_argument("--ai-debug", type=int, choices=(0, 1), default=1, help="Open one dedicated AI debugger per creature (development only)")
     parser.add_argument("--audience-delay", type=float, default=5, help="Host-enforced spectator delay in seconds (0..60; 0 disables)")
     parser.add_argument("--seed", type=int, default=1, help="Unsigned 32-bit per-scenario AI seed")
     parser.add_argument("--countdown", type=int, choices=(0, 5), default=0)

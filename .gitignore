@@ -2,6 +2,15 @@
 /build/
 /client/generated/
 
+# Runtime diagnostics and manually exported QA recordings.
+/logs/
+/replays/
+*.log
+*.log.[0-9]*
+ai-*.jsonl
+ai-*.jsonl.[0-9]*
+*.replay.jsonl
+
 # Python processing tools and tests create local bytecode caches.
 __pycache__/
 *.py[cod]

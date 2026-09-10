@@ -31,41 +31,69 @@ wander_wait :: proc(agent: ^Agent, tick: u32, config: Wander_Config) {
     agent.intent = {}
 }
 
-wander_decide :: proc(agent: ^Agent, ctx: Decision_Context, config: Wander_Config) -> Decision_Reason {
+wander_decide :: proc(agent: ^Agent, ctx: Decision_Context, config: Wander_Config, trace: ^Trace_Buffer = nil, parent: int = 0) -> Decision_Reason {
+    gate := trace_condition(trace, parent, "Movement unlocked?", ctx.can_move)
     if !ctx.can_move {
         agent.intent = {}
         agent.wander = {}
+        trace_add(trace, gate, .Branch, .Selected, "Summon lock: clear wander state and hold")
+        trace_add(trace, parent, .Branch, .Skipped, "Wander branches skipped while locked")
         return .Locked
     }
     w := &agent.wander
+    trace_condition(trace, parent, "Wander already initialized?", w.started)
     if !w.started {
         wander_wait(agent, ctx.tick, config)
         w.next_decision = ctx.tick + config.decision_interval
+        trace_add(trace, parent, .State, .Selected, "Initialize idle deadline using private RNG", "deadline_tick", f64(w.deadline))
     }
+    phase := trace_condition(trace, parent, "Currently walking?", w.phase == .Walk)
     if w.phase == .Walk {
-        if tick_due(ctx.tick, w.deadline) {
+        ended := tick_due(ctx.tick, w.deadline)
+        branch := trace_condition(trace, phase, "Walk deadline reached?", ended, "tick / deadline", f64(ctx.tick), f64(w.deadline))
+        if ended {
             wander_wait(agent, ctx.tick, config)
+            trace_add(trace, branch, .Branch, .Selected, "Walk finished: choose a new idle duration")
             return .Walk_Completed
         }
+        trace_add(trace, branch, .Branch, .Selected, "Continue previous walk intent")
         return .Walking
     }
-    if !tick_due(ctx.tick, w.next_decision) { return .Waiting }
+    due := tick_due(ctx.tick, w.next_decision)
+    schedule := trace_condition(trace, parent, "Scheduled direction decision due?", due, "tick / next_decision", f64(ctx.tick), f64(w.next_decision))
+    if !due {
+        trace_add(trace, schedule, .Branch, .Selected, "Retain Hold until the next decision tick")
+        return .Waiting
+    }
     w.next_decision = ctx.tick + config.decision_interval
-    if !tick_due(ctx.tick, w.deadline) { return .Waiting }
+    idle_done := tick_due(ctx.tick, w.deadline)
+    idle := trace_condition(trace, schedule, "Idle deadline reached?", idle_done, "tick / deadline", f64(ctx.tick), f64(w.deadline))
+    if !idle_done {
+        trace_add(trace, idle, .Branch, .Selected, "Remain idle")
+        return .Waiting
+    }
     directions := DIRECTIONS
     first := int(random_range(&agent.random, 0, 7))
+    candidates := trace_add(trace, idle, .Branch, .Info, "Evaluate directions from a privately sampled starting index", "first_index", f64(first))
     // Only our own position/anchor; no tilemap or opponent lookup.
     for attempt in 0..<8 {
         direction := directions[(first + attempt) % 8]
         next := ctx.position + direction * (config.speed / 60)
         offset := next - ctx.anchor
-        if offset.x * offset.x + offset.y * offset.y > config.roam_radius * config.roam_radius { continue }
+        distance_sq := offset.x * offset.x + offset.y * offset.y
+        permitted := distance_sq <= config.roam_radius * config.roam_radius
+        candidate := trace_condition(trace, candidates, "Candidate remains inside roam radius?", permitted,
+            "squared_distance / squared_radius", f64(distance_sq), f64(config.roam_radius * config.roam_radius), direction)
+        if !permitted { continue }
         agent.intent = {kind = .Move, direction = direction}
         w.phase = .Walk
         w.deadline = ctx.tick + random_range(&agent.random, config.walk_min_ticks, config.walk_max_ticks)
+        trace_add(trace, candidate, .Branch, .Selected, "Choose direction and walk duration", "deadline_tick", f64(w.deadline), direction = direction)
+        if attempt < 7 { trace_add(trace, candidates, .Branch, .Skipped, "Remaining directions not evaluated after first eligible candidate", "count", f64(7 - attempt)) }
         return .Choosing_Direction
     }
     wander_wait(agent, ctx.tick, config)
+    trace_add(trace, candidates, .Branch, .Selected, "No eligible direction: return to idle")
     return .No_Direction
 }
 

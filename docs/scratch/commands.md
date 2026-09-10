@@ -1,3 +1,4 @@
+make dev_arena P1=archer P2=orc ARENA=tiny_swords_village
 make dev_arena P1=triangle P2=diamond ARENA=sandbar AUDIENCE=1
 make dev_arena P1=triangle P2=diamond ARENA=stone_garden AUDIENCE=1
 make dev_arena P1=triangle P2=diamond ARENA=sandbar AUDIENCE=1

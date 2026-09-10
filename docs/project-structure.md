@@ -30,13 +30,24 @@ OnlineGameDevAssetArena/
 │   ├── session/
 │   │   └── session_snapshot.gd     Decoded session, countdown, tick, and live characters
 │   ├── dev/
+│   │   ├── collision_geometry.gd   Debug geometry from shared blocked cells, height rules and map bounds
+│   │   ├── collision_overlay.gd    Filtered world outlines and displayed trainer/character footprints
 │   │   ├── reload_controller.gd    Local visual reload and launcher acknowledgments
 │   │   ├── character_harness.gd / .tscn  Isolated art workbench and diagnostics
 │   │   ├── player_harness.gd / .tscn  Trainer workbench with all eight required states
 │   │   ├── character_harness_stage.gd   Fixed grid and body/feet overlays
 │   │   ├── process_character_assets.gd  Isolated artifact-processing worker
 │   │   ├── fixtures/characters/{reference16,reference32}/  Independent importer/exporter fixtures
-│   │   └── validate_project.gd     Validate a staged client before publication
+│   │   ├── validate_project.gd     Validate a staged client before publication
+│   │   └── ai/
+│   │       ├── ai_debug_window.gd / .tscn  Separate per-creature native debugger
+│   │       ├── trace_reader.gd     Bounded, validated live and journal replay input
+│   │       ├── trace_loader.gd / trace_timeline.gd  Background parsing and visible-row log rendering
+│   │       ├── decision_graph.gd / trace_palette.gd  Downward graph and shared status styling
+│   │       ├── replay_window.gd / .tscn  Recorded-match QA controls and synchronized AI panels
+│   │       ├── replay_store.gd / replay_reader.gd  Background bounded index and frame validation
+│   │       ├── replay_stage.gd     Arena and entity poses at the selected recorded tick
+│   │       └── spatial_trace.gd    Recorded self/candidate/intent/result geometry
 │   ├── ui/
 │   │   ├── lobby_screen.gd         Display state and emit user intent
 │   │   ├── lobby_screen.tscn       Connection controls, roster, and Start
@@ -92,6 +103,10 @@ OnlineGameDevAssetArena/
 │   ├── audience_test.odin          Delay timing, copies, ring bounds, Welcome bytes
 │   ├── network.odin                ENet lifecycle and session updates
 │   ├── ai/                         Pure per-character decisions, wander tactic and PRNG
+│   │   └── trace.odin              Optional bounded branch events with thread/timing data
+│   ├── brain_workers.odin          Two dedicated threads and copied private mailboxes
+│   ├── dev_ai_debug.odin           Bounded queue, rotating journals, atomic snapshots
+│   ├── brain_workers_test.odin     Serial equivalence, isolation, rotation and debug gates
 │   ├── simulation.odin             Public session plus private battle owner
 │   ├── battle.odin                 Context preparation, AI intents and execution adapter
 │   ├── character_actions.odin      Shared voluntary action resolver and locomotion
@@ -133,6 +148,10 @@ OnlineGameDevAssetArena/
 │   ├── 04h-archer-and-orc-modules.md  Independent real-art modules, calibration and checks
 │   ├── 04i-playable-characters.md  Runtime bundles, selectable art, motion labels and asset audit
 │   ├── 05-player-harness.md        Trainer contract, Player1 processing and harness
+│   ├── 06c-senses-and-ai-debug-windows-plan.md  Pending vision and later sense roadmap
+│   ├── 06d-ai-debugger-harness.md   Implemented thread/trace contract, debugger and evidence
+│   ├── 06e-qa-replay-and-trace-browsing.md  Performance, playback contract, QA and re-simulation plan
+│   ├── log-cleanup.md              Daily retention, active-run protection and installed cron
 │   ├── project-structure.md        This document
 │   ├── protocol.md                 Version 9 messages and content contract
 │   └── plan.md                     Roadmap and implementation status
@@ -140,12 +159,19 @@ OnlineGameDevAssetArena/
 │   ├── process_character_assets.py  Source/code snapshots, processing reports and publication
 │   ├── prepare_characters.py       Prepare cached runtime art under client/generated/characters/
 │   ├── dev_session.py              Isolated host/clients, validation, file watch, cleanup
+│   ├── open_replay.py              Open the latest or selected recording with compatible resources
+│   ├── purge_logs.py               Preview/delete expired generated logs; suitable for cron
 │   ├── build_arena_maps.py         Explicit authoring recipes for the land arenas
 │   ├── import_tiny_swords.py       Validate and install the local licensed art subset
 │   └── build_enet.py               Build the pinned Linux dependency locally
 ├── tests/
 │   ├── dev_workflow_check.py       Real processes, saves, reloads, failures, cleanup
 │   ├── dev_client_driver.gd        Development-check input and render capture
+│   ├── ai_debugger_check.py        Real workers, inspector lifecycle, replay and native windows
+│   ├── ai_debugger_driver.gd       Test-only controls and actual inspector render capture
+│   ├── ai_trace_check.gd           Trace identity, bounds, ancestry and journal validation
+│   ├── replay_check.gd             Real recorded movement, synchronized seek/pause, graph and file checks
+│   ├── log_cleanup_check.py        Expiry, deletion, active/pinned/source and symlink preservation
 │   ├── land_movement_check.gd      Real host/client stair traversal and camera switches
 │   ├── land_arena_render.gd        Whole-map and selection-layout render checks
 │   ├── tiny_swords_check.gd        Networked building collision, theme switching and scale
@@ -179,7 +205,7 @@ Open **`client/project.godot`** in Godot. The `client/` directory is the Godot p
 
 `server/main.odin` owns startup, network polling, and the fixed 60 Hz loop. `network.odin` handles connections and calls the rules in `session.odin`; `protocol.odin` owns packet encoding. Two fighter slots are independent of audience connections. `content.odin` validates shared character, terrain, and arena catalogs before listening. Players receive live membership/selection state; audience receives historical state through `Audience_Stream`, at the configured delay.
 
-`movement.odin` now owns runtime characters, the countdown, spawning, and authoritative collision/movement. Future character AI and combat also belong on the host. Add focused files as those responsibilities appear. Odin organizes packages by directory, so several `.odin` files in one package can later share declarations. [Odin packages](https://odin-lang.org/docs/overview/#packages)
+`movement.odin` owns runtime characters, the countdown, spawning, and authoritative collision/movement. `Simulation` owns private `Battle_Runtime` alongside the public session. `brain_workers.odin` runs each creature's AI on its own thread with copied input/state; the host applies returned intents through `character_actions.odin`. `dev_ai_debug.odin` exports optional private traces on a separate writer thread. Odin organizes packages by directory, so several `.odin` files in one package share declarations. [Odin packages](https://odin-lang.org/docs/overview/#packages)
 
 The server connects to clients through network messages. Its simulation code owns the accepted game state, as described in the [message-flow example](00-odin-server-godot-client.md).
 
@@ -216,6 +242,10 @@ The root `Makefile` provides the entry point for both programs:
 | `make check_tiny_swords` | Verify installed assets, normalized sizing and networked building collision |
 | `make dev_arena P1=triangle P2=diamond ARENA=sandbar AUDIENCE=1` | Launch directly into a watched development scenario |
 | `make check_dev` | Check launcher, live visuals, automatic code/data relaunch, and cleanup |
+| `make ai_debugger P1=archer P2=orc` | Launch the arena and two separate AI tree/timeline/replay inspectors |
+| `make check_ai_debugger` | Check real dedicated workers, bounded logs, inspector replay/lifecycle and release export gate |
+| `make replay [REPLAY=/path/to/match.replay.jsonl]` | Open recorded match QA with pause/play, seeking, speed and both AI traces |
+| `make purge_logs` | Preview logs and recordings eligible for daily cleanup; no deletion by default |
 | `make check_audience_delay` | Check the five-second spectator timeline before client presentation |
 | `make check_camera` | Check independent spectator controls and fixed centered player views |
 | `make check_land` | Check networked stair traversal and camera controls |
@@ -251,5 +281,17 @@ private `Battle_Runtime`, `Simulation` owner and Godot `CharacterMotionPresenter
 Public session snapshots stay separate from future senses and cognitive memory.
 The [architecture roadmap](06-character-ai-orchestration-proposal.md) retains the
 later sensing, strategy and learning phases. Current transport uses protocol v9.
+
+[Checkpoint 6A.1](06d-ai-debugger-harness.md) adds dedicated native workers and the
+standalone Godot debugger at `client/dev/ai/ai_debug_window.tscn`. It loads no game
+connection/arena, consumes private local trace files, and displays actual branches
+and confirmed feedback. Its pause/step controls replay recorded decisions. Vision
+and longer deliberation will extend this harness; neither is simulated by the UI.
+
+[Checkpoint 6A.2](06e-qa-replay-and-trace-browsing.md) adds a virtual timeline,
+background parsing, shared downward decision graphs and a separate match replay
+window. `server/dev_replay.odin` records the host's public state plus matching traces;
+the viewer samples existing rendering resources at the selected tick without running
+AI or connecting to a match. Deterministic re-simulation remains planned.
 
 Player1 walk preparation and prediction are described in [Player1 walk timing](05b-player-walk-timing.md). `client/players/trainer_movement.gd` mirrors `trainer_tick_motion`; `tests/player_step_check.gd` checks processed lift/plant poses and extends the trainer integration check.

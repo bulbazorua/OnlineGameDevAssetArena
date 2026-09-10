@@ -1,6 +1,12 @@
 # Asset Arena roadmap
 
-**Checkpoint 6A is implemented:** [autonomous idle/walk](06b-autonomous-idle-walk.md). Each character has private AI state, a seeded wander tactic and a shared intent/action path. Public movement reaches both players and delayed audience. [Sensing, composable strategies and learning](06-character-ai-orchestration-proposal.md) remain phased follow-up work.
+**Checkpoint 6A is implemented:** [autonomous idle/walk](06b-autonomous-idle-walk.md). Each character has private AI state, a seeded wander tactic and a shared intent/action path. Public movement reaches both players and delayed audience.
+
+**Checkpoint 6A.1 is implemented: [dedicated AI threads and debugger harness](06d-ai-debugger-harness.md).** Each creature has a separate native Odin worker, private copied inputs/state and a separate development-only Godot inspector. The harness records real idle/wander branches, intent and host outcome with a timeline, event stepping, spatial data and rotating journals. `make ai_debugger P1=archer P2=orc` opens it. Stepping replays recorded decisions while the battle continues; cognition spanning multiple ticks remains future work.
+
+**Checkpoint 6A.2: [responsive inspection and recorded-match QA](06e-qa-replay-and-trace-browsing.md).** Visible-row log rendering and background parsing keep selection responsive; colored decision graphs branch downward. `make replay` opens the latest recorded world with pause/play, seeking and P1/P2 traces on one clock. This displays saved host states; deterministic re-simulation is a separate planned checkpoint. [Daily log cleanup](log-cleanup.md) prunes expired diagnostics and recordings while protecting active and pinned runs.
+
+**Next: [6B.1 — Vision in the existing AI inspectors](06c-senses-and-ai-debug-windows-plan.md).** The implementation plan records the current-code audit, required content/sensing refactors and host-authoritative vision cones. Complete the initial senses—vision, olfaction, hearing and terrain sensing—before combat, moods and learning. Vision is not implemented yet. The [AI architecture](06-character-ai-orchestration-proposal.md) explains the longer-term boundaries, and the [research review](scratch2/planning.md) supplies the scientific background.
 
 The [trainer arena checkpoint](05a-trainers-and-summoning.md) adds trainer-controlled movement and a host-timed summon sequence for the selected gladiators. Protocol version 7 introduced separate trainer and gladiator entities.
 
@@ -37,7 +43,11 @@ The working game now includes **checkpoint 4C: selectable Archer and Orc**, usin
 | [5B — Arena trainers and summoning](05a-trainers-and-summoning.md) | Implemented | Player1 trainers move independently and summon selected gladiators on a shared host timeline, including delayed audience and late joins. |
 | [5B.1 — Player first-step timing](05b-player-walk-timing.md) | Implemented | Player1 starts with lift/plant poses before translation; host, prediction and audience share trainer action clocks. |
 | [6A — Autonomous idle and walk](06b-autonomous-idle-walk.md) | Implemented | Private per-character runtime, a shared intent/action boundary, seeded wandering and delayed public movement state. |
-| [6B–6F — Senses, combat strategies and learning](06-character-ai-orchestration-proposal.md) | Proposed direction | Observer-specific evidence, shared abilities, composable tactics, trainer advice and later persistent opponent learning, in separate checkpoints. |
+| [6A.1 — Dedicated AI threads and debugger](06d-ai-debugger-harness.md) | Implemented | Two private workers, real branch traces, bounded journals and two independent Godot windows with recorded step/replay and optional lifecycle. |
+| [6A.2 — Responsive inspection and QA playback](06e-qa-replay-and-trace-browsing.md) | Implemented | Virtual log list, background parsing, colored downward graphs, bounded world/AI recording, synchronized pause/play/seek, Git ignores and daily log cleanup. |
+| [6B.1 — Vision in the AI inspectors](06c-senses-and-ai-debug-windows-plan.md) | Next implementation plan | Per-creature host observations, configurable vision cones and occlusion, displayed through the existing debugger. |
+| [6B.2–6B.4 — Olfaction, hearing and terrain sensing](06c-senses-and-ai-debug-windows-plan.md#1-roadmap-and-the-first-stopping-point) | Planned after vision | Typed sensory evidence and dedicated inspector panels; all four initial senses precede combat. |
+| [6C–6F — Combat, tactics, moods and learning](06c-senses-and-ai-debug-windows-plan.md#9-how-the-remaining-senses-and-learning-build-on-this-base) | Later roadmap | Shared abilities, private working memory, composable tactics, trainer relationship and persistent opponent/response learning. |
 | Terrain effects | Later planning | Build on typed terrain and authoritative gameplay. |
 
 Implement and verify one checkpoint at a time. The Phase 3 document lists the proposed filenames, classes, Odin types/procedures, message layouts, and acceptance checks. The [current protocol](protocol.md) is version 9. Both Ready now starts the countdown and then enters the playable arena.

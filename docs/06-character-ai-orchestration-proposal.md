@@ -1,7 +1,9 @@
 # Proposal: autonomous characters, senses, strategies and learning
 
-Status: **checkpoint 6A implemented; later sensing, combat and learning phases remain proposed**.
+Status: **6A idle/wander and 6A.1 dedicated threads/debugger implemented; sensing is planned; combat and learning remain later work**.
 See [the implementation and commands](06b-autonomous-idle-walk.md) for the current runtime.
+The [debugger checkpoint](06d-ai-debugger-harness.md) records the thread ownership,
+telemetry contract, inspection controls and verification evidence.
 Reviewed against this repository and the local `2dRpgGameEngine` combat strategy
 sandbox on 2026-09-10. The reference repository was inspected without edits.
 
@@ -11,13 +13,17 @@ describes its gameplay role. A trainer is a separate entity.
 
 Read [the first implementation slice](06a-idle-wander-implementation-plan.md) for
 approved files, types, timing, protocol changes and acceptance checks. This document
-explains how that slice grows into composable combat AI.
+explains how that slice grows into composable combat AI. The next implementation
+is [6B.1: vision in the existing AI windows](06c-senses-and-ai-debug-windows-plan.md),
+including a current-code audit and required refactors. Its roadmap puts vision,
+olfaction, hearing and terrain sensing ahead of combat. The
+[MoPock research review](scratch2/planning.md) supplies the scientific background.
 
 ## 1. The model in plain language
 
 Imagine each character carrying a notebook:
 
-1. Its eyes, nose and body report observations.
+1. Its eyes, nose, ears and body report observations.
 2. Its notebook records what it noticed, when, and how certain it is.
 3. Its strategy uses that notebook and its own condition to choose a tactic.
 4. The tactic requests an action; shared gameplay rules decide whether it can run.
@@ -35,7 +41,7 @@ defines the action timing. `wander`, `keep_distance` and
 
 ```mermaid
 flowchart TD
-    World[Host world at start of tick] --> Sensors[Enabled senses]
+    World[Frozen host battle input sample] --> Sensors[Enabled senses]
     Effects[Previous tick's confirmed effects and contacts] --> Sensors
     Sensors --> Observations[Observations with source, age and uncertainty]
     Observations --> Memory[Character's private working memory]
@@ -56,7 +62,8 @@ flowchart TD
 
 Solid arrows describe the intended ownership flow. The first checkpoint implements
 only self/contact feedback, idle/wander decisions, action resolution, movement and
-public state. Vision, pain, smell, opponent modeling and advice follow separately.
+public state. Vision, smell, hearing and terrain sensing are the next family of
+checkpoints; pain, opponent modeling and advice follow separately.
 
 ## 2. What exists here now
 
@@ -66,6 +73,7 @@ public state. Vision, pain, smell, opponent modeling and advice follow separatel
 | [`server/movement.odin`](../server/movement.odin) | 60 Hz simulation, 20 Hz snapshots, shared land/elevation collision. The trainer tick uses these mechanics; the battle tick also uses them for autonomous characters. |
 | [`server/trainers.odin`](../server/trainers.odin) | Character spawn placement, 90-tick summon lock and distinct entity identities. AI must begin after that lock. |
 | [`server/audience.odin`](../server/audience.odin) | History copies `Session` values. Large or pointer-backed cognitive stores must not be added to that copied record. |
+| [`server/brain_workers.odin`](../server/brain_workers.odin), [`server/dev_ai_debug.odin`](../server/dev_ai_debug.odin) | Two dedicated workers receive private value copies; the host commits returned actions. A separate bounded writer journals real branches for optional inspectors. |
 | [`client/world/game_arena.gd`](../client/world/game_arena.gd) | Predicts trainers and presents autonomous characters through `CharacterMotionPresenter`. |
 | [`CharacterExports`](../client/characters/import/character_exports.gd) and [Archer exporter](../client/characters/packages/archer/exporter.gd) | Custom per-character imports already produce common art roles. The `ai.mode = player_only` field is an import-era placeholder; runtime wandering has an explicit game-provided binding, pending the behavior-export migration. |
 | [Component contract proposal](04c-component-characters-and-animation-contract.md) | Already separates capabilities, intents, action rules and art. This proposal refines its AI section rather than replacing the asset pipeline. |
@@ -80,7 +88,7 @@ already works there. Paths refer to the separate local reference repository.
 
 | Reference source | Useful idea | How we improve the boundary here |
 | --- | --- | --- |
-| [`game.mk`, `run_game_dev_strategy_bridge`](../../../BurpazorTechnologies/2dRpgGameEngine/game.mk) | The strategy workbench composes the same combat-arena setup used by its checks. | Our launcher and future AI harness must call the production simulation, with explicit scenario settings. |
+| [`game.mk`, `run_game_dev_strategy_bridge`](../../../BurpazorTechnologies/2dRpgGameEngine/game.mk) | The strategy workbench composes the same combat-arena setup used by its checks. | Our launcher and AI harness call the production simulation, with explicit scenario settings. |
 | [`creature.odin`, `creature_tick`](../../../BurpazorTechnologies/2dRpgGameEngine/game/creature.odin) | Readable stages: senses, memory, decisions, motion and outcome feedback. It still labels one stage as mixed decision/execution. | Use separate decision and execution stages from the beginning; prepare observations for all characters before moving any of them. |
 | [`creature_combat_strategy.odin`](../../../BurpazorTechnologies/2dRpgGameEngine/game/creature_combat_strategy.odin) | A pure decision function consumes a context and returns intent plus reasons. | Preserve that pattern. Build context once from observations; do not give strategies world pointers. Its context builders still have access to live opponent positions, facing and defense fields, so visibility discipline rests partly on consumers. |
 | [`creature_opponent_knowledge.odin`](../../../BurpazorTechnologies/2dRpgGameEngine/game/creature_opponent_knowledge.odin) | Explicit knowledge sources, confidence, ages and last-known positions. | Use typed uncertain observations. Recent pain/contact must record the event location or bearing and never follow a hidden source's new position. |
@@ -97,20 +105,24 @@ not a runtime acceptance test of the reference engine.
 
 ## 4. Ownership and project structure
 
-Use typed data and explicit procedures. No new ECS framework, behavior graph editor,
-per-character thread or network service is needed. The package boundary should be
-real: pure AI code cannot import ENet, Godot, `Session` or an arena tilemap.
+Use typed data and explicit procedures. Checkpoint 6A.1 adds a dedicated native thread
+for each creature, outside the copied simulation state. Keep the package boundary
+real: AI code cannot import ENet, Godot, `Session` or an arena tilemap. No new ECS
+framework, behavior graph editor or network service is needed.
 
 ```text
 server/                         package main: host integration and authoritative world
   simulation.odin               Simulation { session, battle }; fixed-step composition
   battle.odin                   Battle_Runtime; identity/reset; context/intent adapter
+  brain_workers.odin            dedicated threads and per-creature copied mailboxes
+  dev_ai_debug.odin             bounded queue and separate journal/snapshot writer
   character_actions.odin        action eligibility, movement result, public locomotion
   ai/                           package ai: no engine/network/world dependencies
     types.odin                  Agent, Decision_Context, Intent, Action_Result
     orchestrator.odin           controller dispatch and decision records
     wander.odin                 Wander_Config / Wander_Runtime; idle-walk behavior
     random.odin                 per-agent deterministic PRNG
+    trace.odin                  optional bounded branch instrumentation
     *_test.odin                 pure behavior tests
 ```
 
@@ -118,18 +130,22 @@ These first-slice files are implemented; see the checkpoint for actual procedure
 
 | Later location | Ownership |
 | --- | --- |
-| `server/perception/vision.odin`, `pain.odin`, `olfaction.odin` | Sensor queries over a restricted immutable world sample and effect events. |
-| `server/ai/observations.odin`, `working_memory.odin` | Typed observations, expiry, confidence and belief updates. |
+| `server/perception/types.odin`, `vision.odin`, `grid_visibility.odin` | Typed observation contracts and pure sensor queries over a supplied immutable sample. Implement vision first; other modalities follow individually. |
+| `server/senses.odin` | Host adapter that samples the world once, schedules sensors and delivers personal observations. |
+| `server/ai/working_memory.odin` | Later expiry, confidence and belief updates over sensory evidence. |
 | `server/ai/strategies.odin`, `tactics/*.odin` | Validated strategy composition and bounded tactic state. Introduce subpackages only when they have a clean dependency boundary. |
 | `server/ai/opponent_model.odin`, `learning.odin` | Observation-based experience aggregation and bounded preference updates. |
 | `server/cognition_store.odin` | Durable memory adapter outside the simulation tick. |
-| `client/dev/ai_inspector.gd` | Reads recorded decisions and sensed facts; never runs a second AI. |
 
 `Simulation` owns both `Session` and `Battle_Runtime`. Network transport continues
 reading the session. `Battle_Runtime` owns each agent's mutable state, keyed by
 round and runtime entity ID. It must not be embedded in the audience's copied
 session or added as a pointer to a historical frame. Public action/position fields
 belong in the session; private memory, random state and scores stay in battle.
+During a decision, each worker exclusively changes its own copied agent/context;
+the host commits returned values after collection. No agent shares mutable memory
+or random state with the other agent. Debug windows read exported records and never
+execute an additional AI or send gameplay input.
 
 Keep only two agent slots for now, matching the two-character roster. An audience
 join creates no agents and consumes no AI random values. Growth to many characters
@@ -162,7 +178,12 @@ not an inference from the old art export's `player_only` placeholder. Record its
 configuration source in development telemetry. Do not present this as validation of
 character-authored AI exports.
 
-The next content checkpoint introduces a separate versioned **behavior contract**:
+The vision checkpoint first adds an explicit game-authored `senses.json` catalog,
+validated and fingerprinted by host and client. Its configuration source is recorded
+as `game_catalog`; the full package export migration is not a prerequisite for vision.
+See the [content migration plan](06c-senses-and-ai-debug-windows-plan.md#4-sense-profiles-and-sight-blocking-content).
+
+A later content checkpoint introduces a separate versioned **behavior contract**:
 `character.behavior@0.1.0` (proposed). Each package's custom exporter emits its
 controller/profile reference, sense configuration, declared capability requirements
 and tuning. A coordinator validates those public exports and produces a data-only
@@ -234,9 +255,9 @@ The host knows the full world to enforce rules; individual AI contexts do not.
 | --- | --- | --- |
 | Vision | Visible positions, observable facing/animation tells, visible terrain; range, field of view, occlusion, sample tick. | Hidden positions, private cooldowns, enemy strategy or exact unseen health. |
 | Pain / nociception | Severity, affected body region when supported, impact bearing if known, event tick. | A hidden attacker's continuing location or guaranteed identity. |
-| Touch / contact | Blocked motion, contact normal/material where the collision system can establish it. | Geometry behind a wall or the full reachable map. |
+| Terrain / tactile | Ground underfoot, blocked motion, contact normal/material where the collision system can establish it; later sensed ground vibration. | Geometry behind a wall or the full reachable map. |
 | Olfaction | Locally sampled strength, approximate bearing, recognized scent class/signature when available. | Exact coordinates, facing, attack windup or a magical entity lookup. |
-| Hearing, later | Sound category, estimated direction/range and uncertainty; trainer advice if heard. | Guaranteed truth of an instruction or the speaker's current hidden position. |
+| Hearing | Sound category, estimated direction/range and uncertainty; later trainer advice if heard. | Guaranteed truth of an instruction or the speaker's current hidden position. |
 | Self-condition | Own movement, fatigue, health/pain and usable abilities. | The opponent's internal state. |
 
 Pain and damage are separate: armor can alter actual damage, and receptor settings
@@ -265,8 +286,10 @@ cannot define all senses correctly.
 
 ## 7. Fixed ticks, latency and debugging
 
-Prepare observations and decisions for every character from the same start-of-tick
-world view before executing movement. Otherwise P2 could perceive P1 after it moved
+Prepare observations and decisions for every character from the same frozen battle
+input before executing creature movement. The current `simulation_tick` advances
+the session/trainers first; sample after that update and before either creature's
+action. Otherwise P2 could perceive P1 after it moved
 while P1 perceived the previous P2 position. Confirmed effects become next-tick
 sensory input in a documented order. Shared combat execution will separately need
 an explicit simultaneous-hit/order rule.
@@ -275,27 +298,36 @@ Proposed schedule, subject to measurement:
 
 - Physics/action rules: existing **60 Hz**.
 - State snapshots: existing **20 Hz**; player inputs continue at 60 Hz.
-- Wander decisions: once per six simulation ticks (**10 Hz**), with retained intent
-  between decisions and immediate cancellation on locks/reset or blocked execution.
-- Future vision/olfaction/strategy scoring: bounded, staggered tick schedules.
-  Their sample times and resulting reaction latency are part of the gameplay rules.
+- Wander orchestrator: invoked every tick on its worker, with direction selection
+  scheduled once per six ticks (**10 Hz**), retained intent and immediate cancellation
+  on locks/reset or blocked execution. Every invocation has its own trace.
+- Vision in 6B.1: sample both creatures on the first unlocked battle tick and every
+  six ticks afterward (10 Hz); retain the sample's original timestamp between queries.
+- Later senses/strategy scoring: bounded tick schedules, staggered only when needed
+  and specified. Sample times and reaction latency are part of the gameplay rules.
 - Confirmed damage/contact: queued during execution and processed at the next tick;
   action locks take effect through gameplay rules without waiting for slow scoring.
 - Learning consolidation/disk I/O: outside the tick, bounded queues; never pause
   movement or networking while waiting for a database or model.
 
-The first implementation is single-threaded and deterministic on the same build,
-scenario and inputs. Maintain a private seeded PRNG per agent; do not depend on
-render FPS, network traffic, the global random stream or wall-clock time. Cross-CPU
-bit-identical float simulation is not promised. CPU budgets and low Internet
-latency require measurements, not an engine-language claim.
+The production host now submits both contexts to two dedicated threads before
+collecting either bounded decision. The serial path remains a test reference, and
+tests compare its simulation state against the threaded path. A private seeded PRNG
+keeps decisions independent of render FPS, network traffic and wall-clock time.
+Cross-CPU bit-identical float simulation is not promised. Longer thoughts must become
+resumable across ticks; see the [future thought protocol](06d-ai-debugger-harness.md#next-independent-thought-progress-and-sensory-causality).
+Thread completion time itself must not determine gameplay reaction speed.
 
 Record the decision when it executes: tick, controller/tactic, requested intent,
 resolved locomotion, result/rejection and compact reason. Debug code reads this
-record instead of reconstructing a decision after the world has changed. Broader
-sense/score inspection is a later dev harness feature; private brain data is not
-part of ordinary client snapshots. Any audience-visible debug state must use the
-same delayed frame as positions and actions.
+record instead of reconstructing a decision after the world has changed. The implemented
+[development harness](06d-ai-debugger-harness.md) opens an independent Godot AI window
+per creature, with atomic history snapshots and rotating JSONL journals. It includes
+branch ancestry, rejected choices, native thread IDs and confirmed host feedback.
+Its step controls replay recorded decisions while the live simulation continues.
+Private brain data is not part of ordinary client snapshots, and these windows do
+not join as audience peers. Any debug state drawn inside an audience game window
+must still use the same delayed frame as its positions and actions.
 
 ## 8. Cognitive database: prepare identity and evidence first
 
@@ -356,12 +388,15 @@ That gesture remains a summon presentation cue until the advice feature exists.
 | Phase | Visible result | Exit criterion |
 | --- | --- | --- |
 | **6A — Idle and wander (implemented)** | Each summoned character independently rests and walks on legal terrain. | Shared orchestrator/intent/action path, host state, delayed audience, stable reset and reproducible tests. |
-| **6B — Sensing and behavior definitions** | Vision/contact observations and a small dev knowledge view; package-authored profiles. | Hidden target stays unknown, disabled senses stay absent, source/age/uncertainty visible. Versioned behavior export migration. |
+| **6A.1 — Threads and debugger (implemented)** | Two private native workers, real decision trees, journals and separate Godot inspectors. | Serial/threaded equivalence, bounded diagnostics, replay, native windows, independent close, reload and release export gate. See [evidence](06d-ai-debugger-harness.md). |
+| **6B.1 — Vision in the inspectors** | Configurable host vision and occlusion, displayed in each creature's existing debugger. | Personal observations from one battle sample; debug on/off preserves simulation. See the [implementation plan](06c-senses-and-ai-debug-windows-plan.md). |
+| **6B.2–6B.4 — Remaining initial senses** | Olfaction, hearing and terrain/tactile observations, one checkpoint at a time. | Approximate evidence, modality-specific limits and age are visible; no hidden-coordinate lookup. |
 | **6C — First combat action and pain** | One shared melee or projectile ability, hurt/death, real pain feedback. | Ability/effect/hitbox ownership and event attribution work before strategic complexity. |
-| **6D — Composable tactics** | Two meaningfully competing tactics, priorities and interruptions; simple trainer advice. | One resolver, reasons visible, no rapid flip-flopping or capability bypass. |
-| **6E — Olfaction and working knowledge** | A character investigates a smell without magically seeing its source. | Approximate sensing, memory expiry and evidence separation demonstrated. |
+| **6D — Working memory and composable tactics** | Ageing beliefs and two meaningfully competing tactics with priorities and interruptions. | One resolver, reasons visible, no rapid flip-flopping, hidden-state access or capability bypass. |
+| **6E — Mood and trainer relationship** | Temperament, temporary mood and perceived trainer advice affect bounded preferences. | Explainable personal behavior; subjective trainer feedback stays distinct from combat effectiveness. |
 | **6F — Learning and persistence** | A character adapts to observed opponents across controlled trials; later across matches. | Learning-on/off evidence, stable identity, bounded memory, compatible save/load. |
 
-The **6A contract** is implemented; see [the checkpoint](06b-autonomous-idle-walk.md).
-The next review checkpoint is 6B. Later phase interfaces are direction, not instructions
-to scaffold every future module.
+The **6A contract** and **6A.1 harness** are implemented. The next review checkpoint
+is **6B.1**: add vision and its evidence to the existing inspectors before implementing
+the remaining senses. Later phase interfaces are direction, not
+instructions to scaffold every future module.
