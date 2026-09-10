@@ -43,17 +43,17 @@ func _check() -> String:
 	await create_timer(0.15).timeout
 	_key(first, KEY_W, true)
 	_key(second, KEY_W, true)
-	await create_timer(1.2).timeout
+	if not await _wait_for(func(): return _position(first, 0).y <= 332.6 and _position(second, 1).y <= 332.6): return "Fighters did not reach the castle collision edge after walk preparation."
 	_key(first, KEY_W, false)
 	_key(second, KEY_W, false)
 	await create_timer(0.2).timeout
 	for client in clients:
 		for index in 2:
 			var position := _position(client, index)
-			if position.y < 332 or position.y > 335: return "A fighter crossed a castle footprint or was blocked too early."
+			if position.y < 329.6 or position.y > 332.6: return "A fighter crossed a castle footprint or was blocked too early."
 			if position.distance_to(_position(first, index)) > 0.01: return "Building collision did not converge across the audience/players."
-			var state = client.network.session.characters[index]
-			if client.game_arena.character_views[state.entity_id].position.distance_to(position) > 1: return "Rendered building collision disagrees with the host."
+			var state = client.network.session.trainers[index]
+			if client.game_arena.trainer_views[state.entity_id].position.distance_to(position) > 1: return "Rendered building collision disagrees with the host."
 	first.network.request_return_to_lobby()
 	if not await _wait_for(func(): return first.lobby.visible): return "Could not return to lobby."
 	first.network.request_start_selection()
@@ -69,7 +69,7 @@ func _check() -> String:
 
 
 func _position(client: Node, index: int) -> Vector2:
-	return client.network.session.characters[index].position
+	return client.network.session.trainers[index].position
 
 
 func _key(client: Node, key: int, pressed: bool) -> void:

@@ -32,6 +32,7 @@ def main():
             shutil.copytree(ROOT / name, root / name, ignore=shutil.ignore_patterns(".godot", "__pycache__"))
         command = ["python3", str(root / "tools/prepare_characters.py"), "--godot", args.godot]
         run(command)
+        run(command + ["--family", "players"])
         index = root / "client/generated/characters/catalog.json"
         original = index.read_bytes()
         timestamp = index.stat().st_mtime_ns
@@ -45,10 +46,11 @@ def main():
         exporter.write_text(source)
         shutil.rmtree(root / "client/assets/Characters")
         shutil.rmtree(root / "client/characters/packages")
+        shutil.rmtree(root / "client/players/packages")
         shutil.rmtree(root / "tools")
         shutil.rmtree(root / "build", ignore_errors=True)
         probe = root / "client/runtime_probe.gd"
-        probe.write_text('extends SceneTree\nfunc _initialize():\n\tvar content = load("res://content/game_content.gd").new()\n\tvar error = content.load_catalog()\n\tif not error.is_empty() or content.character_art.size() != 2:\n\t\tpush_error("Runtime art load failed: " + error)\n\t\tquit(1)\n\t\treturn\n\tquit()\n')
+        probe.write_text('extends SceneTree\nfunc _initialize():\n\tvar content = load("res://content/game_content.gd").new()\n\tvar error = content.load_catalog()\n\tif not error.is_empty() or content.character_art.size() != 2 or content.player_content.art == null:\n\t\tpush_error("Runtime art load failed: " + error)\n\t\tquit(1)\n\t\treturn\n\tquit()\n')
         run([args.godot, "--headless", "--path", str(root / "client"), "--editor", "--import"])
         load = [args.godot, "--headless", "--path", str(root / "client"), "--script", "res://runtime_probe.gd"]
         run(load)

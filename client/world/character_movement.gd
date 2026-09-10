@@ -2,7 +2,7 @@ class_name CharacterMovement
 extends RefCounted
 
 const ArenaCatalog = preload("res://content/arena_catalog.gd")
-const SPEED := 180.0
+const SPEED := 120.0
 const STEP := 1.0 / 60.0
 const LEFT := 1
 const RIGHT := 2

@@ -11,6 +11,7 @@ Options :: struct {
     port: u16,
     content_dir: string,
     audience_delay: f64, // Seconds, configured by the host only.
+    seed: u32,
     dev: bool,
     dev_p1, dev_p2, dev_arena: string,
     dev_countdown: u8,
@@ -18,7 +19,7 @@ Options :: struct {
 }
 
 main :: proc() {
-    options := Options{bind = "127.0.0.1", port = 7000, content_dir = "client/content/data", audience_delay = 5}
+    options := Options{bind = "127.0.0.1", port = 7000, content_dir = "client/content/data", audience_delay = 5, seed = 1}
     flags.parse_or_exit(&options, os.args, .Unix)
     os.exit(run_host(options))
 }
@@ -35,12 +36,14 @@ run_host :: proc(options: Options) -> int {
     scenario, scenario_ok := dev_scenario_load(options, &content)
     if !scenario_ok { return 1 }
     if options.dev_validate_only { return 0 }
-    session: Session
-    network, ok := network_open(options.bind, options.port, &session, &content, delay_ms)
+    simulation := Simulation{seed = options.seed}
+    session := &simulation.session
+    network, ok := network_open(options.bind, options.port, session, &content, delay_ms)
     if !ok {
         return 1
     }
     defer network_close(&network)
+    fmt.printfln("[AI] idle_wander; source=scenario_default; seed=%d; 60 Hz actions, 10 Hz scheduled decisions", options.seed)
     previous := time.tick_now()
     accumulator: time.Duration
     step :: time.Second / SIMULATION_HZ
@@ -48,14 +51,14 @@ run_host :: proc(options: Options) -> int {
         if !network_poll(&network) {
             return 1
         }
-        if dev_scenario_start(&scenario, &session, &content) { network.session_dirty = true }
+        if dev_scenario_start(&scenario, session, &content) { network.session_dirty = true }
         now := time.tick_now()
         accumulator += min(time.tick_diff(previous, now), 250 * time.Millisecond)
         previous = now
         world_due := false
         for accumulator >= step {
             accumulator -= step
-            if session_tick(&session, &content) { network.session_dirty = true }
+            if simulation_tick(&simulation, &content) { network.session_dirty = true }
             if session.server_tick % SNAPSHOT_INTERVAL == 0 { world_due = true }
         }
         if network.session_dirty { network_publish_session(&network) }

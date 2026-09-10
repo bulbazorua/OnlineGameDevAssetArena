@@ -43,7 +43,7 @@ func _command() -> void:
 		event.physical_keycode = KEY_S
 		event.pressed = true
 		root.push_input(event, true)
-		await create_timer(0.2).timeout
+		await create_timer(0.65).timeout # Complete lift/plant, then travel before testing reload.
 		event = InputEventKey.new()
 		event.physical_keycode = KEY_S
 		root.push_input(event, true)

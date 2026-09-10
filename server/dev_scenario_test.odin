@@ -29,7 +29,7 @@ dev_scenario_waits_for_players_and_spawns_once :: proc(t: ^testing.T) {
                 testing.expect(t, session.phase == .In_Arena && session.character_count == 2)
                 for entity, index in session.characters {
                     testing.expect(t, entity.definition_id == character.id && entity.owner_id == u8(index + 1))
-                    testing.expect(t, entity.position == arena_cell_center(&arena, arena.spawns[index]))
+                    testing.expect(t, session.trainers[index].position == arena_cell_center(&arena, arena.spawns[index]) && arena_position_is_clear(&arena, &content, entity.position, character.footprint_radius))
                 }
                 entity_id := session.characters[0].entity_id
                 testing.expect(t, !dev_scenario_start(&scenario, &session, &content))

@@ -57,7 +57,7 @@ def live_visual_paths(changed: set[str], candidate: Path) -> list[str] | None:
     resources = set()
     for relative in changed:
         path = Path(relative)
-        if relative.startswith(("client/assets/Characters/", "client/characters/packages/", "client/generated/characters/")):
+        if relative.startswith(("client/assets/Characters/", "client/characters/packages/", "client/generated/characters/", "client/players/packages/", "client/generated/players/")):
             return None  # Rebuild normalized art and reopen with a coherent bundle.
         if not (candidate / path).is_file():
             return None  # Deletions need a fresh resource cache.
@@ -135,7 +135,7 @@ class DevSessionRunner:
 
     def scenario_arguments(self, candidate: Path) -> list[str]:
         return ["--dev", "--bind=127.0.0.1", f"--dev-p1={self.args.p1}", f"--dev-p2={self.args.p2}",
-                f"--audience-delay={self.args.audience_delay}", f"--dev-arena={self.args.arena}", f"--dev-countdown={self.args.countdown}",
+                f"--audience-delay={self.args.audience_delay}", f"--seed={self.args.seed}", f"--dev-arena={self.args.arena}", f"--dev-countdown={self.args.countdown}",
                 f"--content-dir={candidate / 'client/content/data'}"]
 
     def prepare(self, sources: dict[str, str]) -> Path:
@@ -156,6 +156,7 @@ class DevSessionRunner:
             destination.parent.mkdir(parents=True, exist_ok=True)
             shutil.copy2(ROOT / "tools" / name, destination)
         self.checked([sys.executable, str(candidate / "tools/prepare_characters.py"), "--godot", self.args.godot], candidate / "characters.log")
+        self.checked([sys.executable, str(candidate / "tools/prepare_characters.py"), "--godot", self.args.godot, "--family=players"], candidate / "players.log")
         server_changed = self.active is None or any(
             sources.get(path) != self.active_sources.get(path)
             for path in sources.keys() | self.active_sources.keys() if path.startswith("server/"))
@@ -209,11 +210,11 @@ class DevSessionRunner:
             expected = index + 1 if index < 2 else 0
             self.wait_for(lambda s=slot, role=expected: self.status(s).get("connected") and self.status(s).get("player_id") == role,
                           15, f"{slot} Welcome/role {expected}")
-        self.wait_for(lambda: all(self.status(slot).get("phase") == 3 and self.status(slot).get("audience") == self.args.audience
+        self.wait_for(lambda: all(self.status(slot).get("phase") == 3 and self.status(slot).get("summon_elapsed_ticks") == 90 and self.status(slot).get("audience") == self.args.audience
                                   for slot in self.slots), 10 + self.args.countdown + self.args.audience_delay, "arena snapshots in all windows")
         self.active = candidate
         self.publish_session()
-        self.log(f"Arena ready: {self.args.p1} vs {self.args.p2}, {self.args.arena}, {self.args.audience} audience, {self.args.audience_delay:g}s audience delay (port {self.port}).")
+        self.log(f"Arena ready: {self.args.p1} vs {self.args.p2}, {self.args.arena}, {self.args.audience} audience, {self.args.audience_delay:g}s audience delay, AI seed {self.args.seed} (port {self.port}).")
 
     def publish_session(self) -> None:
         write_json(self.directory / "session.json", {"scenario": vars(self.args), "active": str(self.active),
@@ -318,6 +319,7 @@ def main() -> int:
     parser.add_argument("--arena", default="meadow_crossing")
     parser.add_argument("--audience", type=int, default=0)
     parser.add_argument("--audience-delay", type=float, default=5, help="Host-enforced spectator delay in seconds (0..60; 0 disables)")
+    parser.add_argument("--seed", type=int, default=1, help="Unsigned 32-bit per-scenario AI seed")
     parser.add_argument("--countdown", type=int, choices=(0, 5), default=0)
     parser.add_argument("--watch", type=int, choices=(0, 1), default=1)
     parser.add_argument("--headless", action="store_true", help="No windows (automation)")
@@ -325,6 +327,8 @@ def main() -> int:
     parser.add_argument("--godot", default="godot")
     parser.add_argument("--odin", default="odin")
     args = parser.parse_args()
+    if not 0 <= args.seed <= 0xffffffff:
+        parser.error("SEED must be an integer from 0 to 4294967295.")
     if not 0 <= args.audience <= 4093 or args.run_seconds < 0:
         parser.error("AUDIENCE must be 0..4093 and --run-seconds must be nonnegative.")
     if not math.isfinite(args.audience_delay) or not 0 <= args.audience_delay <= 60:

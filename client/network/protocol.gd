@@ -4,7 +4,16 @@ extends RefCounted
 const SessionSnapshot = preload("res://session/session_snapshot.gd")
 enum MessageKind { HELLO = 1, WELCOME = 2, SESSION_STATE = 3, START_SELECTION = 4, SELECT_CHARACTER = 5, SET_READY = 6, RETURN_TO_LOBBY = 7, COMMAND_REJECTED = 8, SELECT_ARENA = 9, INPUT = 10, WORLD_STATE = 11 }
 enum CommandRejectReason { NONE, AUDIENCE_READ_ONLY, WRONG_PHASE, STALE_ROUND, UNKNOWN_CHARACTER, SELECTION_CHANGED, NEED_TWO_PLAYERS, UNKNOWN_ARENA, ARENA_CHANGED }
-const HEADER := [79, 71, 65, 65, 6]
+const HEADER := [79, 71, 65, 65, 9]
+const FACING_NAMES := ["north", "north_east", "east", "south_east", "south", "south_west", "west", "north_west"]
+const LOCOMOTION_NAMES := ["idle", "walk"]
+# Shared with server/character_actions.odin; state_start_tick starts preparation.
+const CHARACTER_WALK_START_TICKS := 12
+const TRAINER_DEFINITION_ID := 1
+const TRAINER_RADIUS := 9.6
+const TRAINER_WALK_START_TICKS := 8
+const SUMMON_DURATION_TICKS := 90
+const SUMMON_REVEAL_TICKS := 36
 const REJECT_PROTOCOL := 1
 const REJECT_CONTENT := 2
 
@@ -70,7 +79,7 @@ static func decode(packet: PackedByteArray, channel: int) -> DecodedMessage:
 			if message.audience_delay_ms > 60000 or (message.player_id > 0 and message.audience_delay_ms != 0):
 				return _invalid("The host sent an invalid audience delay.")
 		MessageKind.SESSION_STATE:
-			if packet.size() < 32 or packet[14] > SessionSnapshot.Phase.IN_ARENA or packet[15] > 3 or packet[31] not in [0, 2] or packet.size() != 32 + packet[31] * 20:
+			if packet.size() < 32 or packet[14] > SessionSnapshot.Phase.IN_ARENA or packet[15] > 3 or packet[31] not in [0, 2] or packet.size() != (138 if packet[31] == 2 else 32):
 				return _invalid("The host sent an invalid session state.")
 			var snapshot := SessionSnapshot.new(packet[15], _read_integer(packet, 16, 2))
 			if snapshot.audience_count + snapshot.player_count() > 4095:
@@ -102,7 +111,7 @@ static func decode(packet: PackedByteArray, channel: int) -> DecodedMessage:
 			elif snapshot.countdown_seconds != 0:
 				return _invalid("Countdown does not match the phase.")
 			if snapshot.phase == SessionSnapshot.Phase.IN_ARENA:
-				if not snapshot.both_ready() or packet[31] != 2 or not _read_characters(packet, 32, snapshot):
+				if not snapshot.both_ready() or packet[31] != 2 or not _read_world(packet, 32, snapshot):
 					return _invalid("The host sent invalid characters.")
 				for character in snapshot.characters:
 					if character.definition_id != snapshot.players[character.owner_id - 1].character_id:
@@ -111,12 +120,12 @@ static func decode(packet: PackedByteArray, channel: int) -> DecodedMessage:
 				return _invalid("Characters arrived before arena entry.")
 			message.session = snapshot
 		MessageKind.WORLD_STATE:
-			if packet.size() != 55 or packet[14] != 2:
+			if packet.size() != 121 or packet[14] != 2:
 				return _invalid("The host sent an invalid world state.")
 			message.session = SessionSnapshot.new()
 			message.session.round_id = _read_integer(packet, 6, 4)
 			message.session.server_tick = _read_integer(packet, 10, 4)
-			if not _read_characters(packet, 15, message.session):
+			if not _read_world(packet, 15, message.session):
 				return _invalid("The host sent invalid character positions.")
 		MessageKind.COMMAND_REJECTED:
 			if packet.size() != 12 or packet[10] not in [MessageKind.START_SELECTION, MessageKind.SELECT_CHARACTER, MessageKind.SET_READY, MessageKind.SELECT_ARENA, MessageKind.RETURN_TO_LOBBY, MessageKind.INPUT] or packet[11] < 1 or packet[11] > CommandRejectReason.ARENA_CHANGED:
@@ -162,21 +171,40 @@ static func serial_is_newer(value: int, previous: int) -> bool:
 	return distance > 0 and distance < 0x80000000
 
 
-static func _read_characters(packet: PackedByteArray, start: int, snapshot: SessionSnapshot) -> bool:
+static func _read_world(packet: PackedByteArray, start: int, snapshot: SessionSnapshot) -> bool:
 	var ids: Dictionary = {}
 	var owners: Dictionary = {}
-	for index in 2:
+	for index in 4:
 		var offset := start + index * 20
-		var character := SessionSnapshot.CharacterState.new()
+		var is_trainer := index >= 2
+		var character: SessionSnapshot.EntityState = SessionSnapshot.TrainerState.new() if is_trainer else SessionSnapshot.CharacterState.new()
 		character.entity_id = _read_integer(packet, offset, 4)
 		character.definition_id = _read_integer(packet, offset + 4, 2)
 		character.owner_id = packet[offset + 6]
 		character.position = Vector2(_read_integer(packet, offset + 7, 4), _read_integer(packet, offset + 11, 4)) / 256.0
 		character.applied_input_sequence = _read_integer(packet, offset + 15, 4)
 		character.input_mask = packet[offset + 19]
-		if character.entity_id == 0 or character.definition_id == 0 or character.owner_id not in [1, 2] or character.input_mask > 15 or ids.has(character.entity_id) or owners.has(character.owner_id) or character.position.x > 16384 or character.position.y > 16384:
+		var owner_key := Vector2i(int(is_trainer), character.owner_id)
+		if character.entity_id == 0 or character.definition_id == 0 or character.owner_id not in [1, 2] or character.input_mask > 15 or ids.has(character.entity_id) or owners.has(owner_key) or character.position.x > 16384 or character.position.y > 16384:
 			return false
+		if is_trainer and character.definition_id != TRAINER_DEFINITION_ID: return false
+		if not is_trainer and (character.applied_input_sequence != 0 or character.input_mask != 0): return false
 		ids[character.entity_id] = true
-		owners[character.owner_id] = true
-		snapshot.characters.append(character)
+		owners[owner_key] = true
+		if is_trainer: snapshot.trainers.append(character)
+		else: snapshot.characters.append(character)
+	snapshot.summon_elapsed_ticks = _read_integer(packet, start + 80, 2)
+	if snapshot.summon_elapsed_ticks > SUMMON_DURATION_TICKS: return false
+	if snapshot.summon_elapsed_ticks < SUMMON_DURATION_TICKS:
+		for trainer in snapshot.trainers:
+			if trainer.input_mask != 0: return false
+	var entities := snapshot.characters + snapshot.trainers
+	for index in 4:
+		var character: SessionSnapshot.CharacterState = entities[index]
+		var offset := start + 82 + index * 6
+		character.locomotion = packet[offset]
+		character.facing = packet[offset + 1]
+		character.state_start_tick = _read_integer(packet, offset + 2, 4)
+		if character.locomotion > 1 or character.facing > 7 or serial_is_newer(character.state_start_tick, snapshot.server_tick): return false
+		if snapshot.summon_elapsed_ticks < SUMMON_DURATION_TICKS and character.locomotion != 0: return false
 	return true

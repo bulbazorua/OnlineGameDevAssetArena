@@ -92,7 +92,14 @@ func _write_status() -> void:
 		for character in snapshot.characters:
 			characters.append({"id": character.entity_id, "definition": character.definition_id,
 				"owner": character.owner_id, "x": character.position.x, "y": character.position.y,
-				"ack": character.applied_input_sequence})
+				"ack": character.applied_input_sequence, "locomotion": character.locomotion,
+				"facing": character.facing, "state_start_tick": character.state_start_tick})
+	var trainers: Array = []
+	if snapshot != null:
+		for trainer in snapshot.trainers:
+			trainers.append({"id": trainer.entity_id, "definition": trainer.definition_id, "owner": trainer.owner_id,
+				"x": trainer.position.x, "y": trainer.position.y, "ack": trainer.applied_input_sequence,
+				"locomotion": trainer.locomotion, "facing": trainer.facing, "state_start_tick": trainer.state_start_tick})
 	var visuals := {}
 	for id: int in _app.content.visuals:
 		var visual = _app.content.visuals[id]
@@ -100,7 +107,8 @@ func _write_status() -> void:
 	var status := {"pid": OS.get_process_id(), "connected": network.connection_state == GameConnection.ConnectionState.CONNECTED,
 		"player_id": network.player_id, "audience_delay_ms": network.audience_delay_ms, "phase": -1 if snapshot == null else snapshot.phase,
 		"round": -1 if snapshot == null else snapshot.round_id, "tick": -1 if snapshot == null else snapshot.server_tick,
-		"map": 0 if snapshot == null else snapshot.map_id, "characters": characters,
+		"map": 0 if snapshot == null else snapshot.map_id, "characters": characters, "trainers": trainers,
+		"summon_elapsed_ticks": 0 if snapshot == null else snapshot.summon_elapsed_ticks,
 		"fingerprint": _app.content.fingerprint.hex_encode(), "sequence": _app.game_arena._sequence,
 		"visual_generation": _generation, "visuals": visuals, "reload_error": _error,
 		"camera_enabled": _app.game_arena.camera.enabled, "ping": network.get_ping_ms(),

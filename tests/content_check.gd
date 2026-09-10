@@ -50,16 +50,16 @@ func _initialize() -> void:
 
 
 func _check_protocol() -> void:
-	var welcome := PackedByteArray([79, 71, 65, 65, 6, 2, 0, 136, 19, 0, 0])
+	var welcome := PackedByteArray([79, 71, 65, 65, 9, 2, 0, 136, 19, 0, 0])
 	var welcomed := GameProtocol.decode(welcome, 0)
 	_expect(welcomed.error_title.is_empty() and welcomed.player_id == 0 and welcomed.audience_delay_ms == 5000, "Audience Welcome delay differs from Odin.")
-	for invalid in [welcome.slice(0, 7), PackedByteArray([79, 71, 65, 65, 5, 2, 0, 136, 19, 0, 0]), PackedByteArray([79, 71, 65, 65, 6, 2, 1, 136, 19, 0, 0]), PackedByteArray([79, 71, 65, 65, 6, 2, 0, 97, 234, 0, 0])]:
+	for invalid in [welcome.slice(0, 7), PackedByteArray([79, 71, 65, 65, 5, 2, 0, 136, 19, 0, 0]), PackedByteArray([79, 71, 65, 65, 9, 2, 1, 136, 19, 0, 0]), PackedByteArray([79, 71, 65, 65, 9, 2, 0, 97, 234, 0, 0])]:
 		_expect(not GameProtocol.decode(invalid, 0).error_title.is_empty(), "Invalid or old Welcome delay was accepted.")
-	var packet := PackedByteArray([79, 71, 65, 65, 6, 3, 1, 2, 3, 4, 5, 6, 7, 8, 1, 3, 1, 2, 1, 0, 4, 0, 1, 3, 0, 0, 0, 0, 0, 0, 0, 0])
+	var packet := PackedByteArray([79, 71, 65, 65, 9, 3, 1, 2, 3, 4, 5, 6, 7, 8, 1, 3, 1, 2, 1, 0, 4, 0, 1, 3, 0, 0, 0, 0, 0, 0, 0, 0])
 	var state := GameProtocol.decode(packet, 0).session
 	_expect(state != null and state.round_id == 0x04030201 and state.revision == 0x08070605 and state.audience_count == 513 and state.players[0].character_id == 4 and state.players[0].ready, "Session wire fixture differs from Odin.")
 	var command := GameProtocol.encode_command(GameProtocol.MessageKind.SELECT_CHARACTER, 0x04030201, 4)
-	_expect(command == PackedByteArray([79, 71, 65, 65, 6, 5, 1, 2, 3, 4, 4, 0]), "SelectCharacter wire fixture differs from Odin.")
+	_expect(command == PackedByteArray([79, 71, 65, 65, 9, 5, 1, 2, 3, 4, 4, 0]), "SelectCharacter wire fixture differs from Odin.")
 	for length in packet.size():
 		_expect(not GameProtocol.decode(packet.slice(0, length), 0).error_title.is_empty(), "Truncated state accepted.")
 	for edit in [[14, 2], [15, 1], [18, 0], [26, 1], [20, 0], [22, 2], [14, 0]]:

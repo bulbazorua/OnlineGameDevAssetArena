@@ -40,6 +40,7 @@ func _run() -> void:
 	arena.debug_actions = true
 	state.phase = Snapshot.Phase.IN_ARENA
 	state.server_tick = 1
+	state.summon_elapsed_ticks = 90
 	var start: Vector2 = content.arena_catalog.arenas_by_id[state.map_id].cell_center(content.arena_catalog.arenas_by_id[state.map_id].spawns[0])
 	for index in 2:
 		var character := Snapshot.CharacterState.new()
@@ -48,13 +49,19 @@ func _run() -> void:
 		character.owner_id = index + 1
 		character.position = start + Vector2(index * 58, 0)
 		state.characters.append(character)
+		var trainer := Snapshot.TrainerState.new()
+		trainer.entity_id = index + 3
+		trainer.definition_id = 1
+		trainer.owner_id = index + 1
+		trainer.position = character.position + Vector2(0, 64)
+		state.trainers.append(trainer)
 	arena.display_session(state)
 	arena.set_camera_owner(1)
 	arena.camera.zoom_by(4)
 	await _capture("arena-idle")
-	for view in arena.character_views.values(): view.observe_motion(Vector2(3 if view.player_id == 1 else -3, 0))
+	for view in arena.trainer_views.values(): view.observe_motion(Vector2(3 if view.player_id == 1 else -3, 0))
 	await _capture("arena-walk")
-	for view in arena.character_views.values(): view.set_debug_actions(false)
+	for view in arena.trainer_views.values(): view.set_debug_actions(false)
 	await _capture("arena-no-debug")
 	print("PASS: graphical six-character selection, audience picks and animated arena/action-label captures")
 	quit()

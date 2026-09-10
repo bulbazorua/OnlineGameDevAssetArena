@@ -182,6 +182,8 @@ NormalizedCharacterArt:
 
 ### AI export boundary
 
+The [AI orchestration proposal](06-character-ai-orchestration-proposal.md) now refines this boundary for autonomous gladiators, trainer advice, observer-specific knowledge and learning. Its first idle/wander checkpoint is implemented; the existing `player_only` art export remains a placeholder until the explicit behavior-export migration.
+
 `CharacterAIExport` explicitly declares `player_only` or an AI backend/profile with validated ability references, behavior settings and observation requirements. The initial animated-character slices use `player_only`; this exports an honest capability without claiming AI is implemented. Later, Archer may export preferred range and ranged-action preferences while Orc exports close-range preferences. Both refer to common ability IDs and observed gameplay state, never source animation names.
 
 If a character needs custom decision logic, its module owns a future **Odin** brain implementation behind `CharacterBrain.step(observation, own_memory) -> CharacterIntent`. It is compiled and explicitly registered in the host, using a small shared contracts package; it does not import the entire server main package or run GDScript AI on a client. The character exporter declares the backend key/version; it cannot upload executable brain code over the network.

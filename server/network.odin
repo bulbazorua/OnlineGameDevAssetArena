@@ -50,7 +50,7 @@ network_open :: proc(bind: string, port: u16, session: ^Session, content: ^Game_
         enet.deinitialize()
         return {}, false
     }
-    host.maximumPacketSize = 128
+    host.maximumPacketSize = 160
     host.maximumWaitingData = 4096
     fmt.printfln("[host] Listening on %s:%d (2 fighters, up to %d total connections)", bind, port, MAX_CONNECTIONS)
     fmt.printfln("[host] Audience delay: %.3f seconds.", f64(audience_delay_ms) / 1000)
@@ -222,7 +222,7 @@ network_publish_audience :: proc(network: ^Network_Host) {
     if !audience_advance(&network.audience, network.session, time.tick_since(network.started_at)) { return }
     state := &network.audience.latest
     roster := protocol_encode_session(state)
-    world: [55]u8
+    world: [121]u8
     if state.phase == .In_Arena { world = protocol_encode_world(state) }
     for &client in network.clients {
         if !client.welcomed || client.player_id != 0 { continue }

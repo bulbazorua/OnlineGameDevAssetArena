@@ -12,7 +12,7 @@ class PlayerSlotState:
 	func _init(is_present := false) -> void:
 		present = is_present
 
-class CharacterState:
+class EntityState:
 	extends RefCounted
 	var entity_id := 0
 	var definition_id := 0
@@ -21,9 +21,19 @@ class CharacterState:
 	var applied_input_sequence := 0
 	var input_mask := 0
 
+class CharacterState extends EntityState:
+	var locomotion := 0
+	var facing := 0
+	var state_start_tick := 0
+
+class TrainerState extends CharacterState:
+	pass
+
 var countdown_seconds := 0
 var server_tick := 0
-var characters: Array[CharacterState] = []
+var characters: Array[EntityState] = []
+var trainers: Array[EntityState] = []
+var summon_elapsed_ticks := 0
 var players: Array[PlayerSlotState] = []
 var audience_count: int
 var round_id := 0
@@ -61,4 +71,6 @@ func with_world(world: SessionSnapshot) -> SessionSnapshot:
 		result.players[index].ready = players[index].ready
 	result.server_tick = world.server_tick
 	result.characters = world.characters
+	result.trainers = world.trainers
+	result.summon_elapsed_ticks = world.summon_elapsed_ticks
 	return result

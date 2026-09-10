@@ -138,3 +138,14 @@ func _draw() -> void:
 
 	if is_local:
 		draw_arc(Vector2.ZERO, radius + 4, 0, TAU, 48, Color(1, 1, 1, 0.8), 1.2, true)
+
+
+# Runtime locomotion samples the host or predicted action clock. Position
+# corrections do not invent animation transitions; harness playback stays separate.
+func present_locomotion(role: String, facing: String, seconds: float) -> void:
+	animate = false
+	animator.action = role
+	animator.facing = facing
+	animator.elapsed = seconds
+	if animation_set != null: present_art(role, facing, "default", seconds)
+	_update_animation()

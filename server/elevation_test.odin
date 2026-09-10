@@ -57,7 +57,7 @@ elevation_changes_require_stairs_in_both_directions :: proc(t: ^testing.T) {
     terrain.key = "stairs"
     testing.expect(t, arena_step_is_allowed(arena, &content, {48,48}, {80,48}))
     testing.expect(t, arena_step_is_allowed(arena, &content, {80,48}, {48,48}))
-    testing.expect(t, character_move({63,48}, 2, 12, arena, &content) == [2]f32{66,48})
+    testing.expect(t, character_move({63,48}, 2, 12, arena, &content) == [2]f32{65,48})
     arena.elevations[6] = 2
     testing.expect(t, !arena_step_is_allowed(arena, &content, {48,48}, {80,48}))
     terrain.key = previous

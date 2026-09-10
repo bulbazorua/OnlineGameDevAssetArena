@@ -37,6 +37,8 @@ func _check() -> String:
 	first.selection.ready_button.pressed.emit()
 	second.selection.ready_button.pressed.emit()
 	if not await _wait_for(func(): return _all_phase(SessionSnapshot.Phase.IN_ARENA), 8500): return "Animated characters did not spawn after countdown."
+	if not await _wait_for(func(): return clients.all(func(client): return client.network.session.summon_elapsed_ticks == 90)): return "Summoning did not finish."
+	await create_timer(0.08).timeout
 	for client in clients:
 		for owner in [1, 2]:
 			var view = _view(client, owner)
@@ -46,24 +48,24 @@ func _check() -> String:
 	_key(first, KEY_D, true)
 	_key(second, KEY_A, true)
 	await create_timer(0.10).timeout
-	if _view(first, 1).animator.action != "walk" or _view(second, 2).animator.action != "walk": return "Local walking waited for host snapshots."
-	if _view(watcher, 1).animator.action != "idle": return "Audience action text leaked live movement."
-	if not await _wait_for(func(): return _view(watcher, 1).animator.action == "walk" and _view(watcher, 2).animator.action == "walk", 1500): return "Delayed movement did not animate for the audience."
+	if _trainer(first, 1).animator.action != "walk" or _trainer(second, 2).animator.action != "walk": return "Local walking waited for host snapshots."
+	if _trainer(watcher, 1).animator.action != "idle": return "Audience action text leaked live movement."
+	if not await _wait_for(func(): return _trainer(watcher, 1).animator.action == "walk" and _trainer(watcher, 2).animator.action == "walk", 1500): return "Delayed movement did not animate for the audience."
 	for client in clients:
-		if _view(client, 1).animator.facing != "east" or _view(client, 2).animator.facing != "west": return "Movement facing disagreed across clients."
-		if _view(client, 1).action_label.text != "walk": return "Label did not show the presented action."
+		if _trainer(client, 1).animator.facing != "east" or _trainer(client, 2).animator.facing != "west": return "Movement facing disagreed across clients."
+		if _trainer(client, 1).action_label.text != "walk": return "Label did not show the presented action."
 	_key(first, KEY_D, false)
 	_key(second, KEY_A, false)
 	await create_timer(0.08).timeout
-	if _view(first, 1).animator.action != "idle" or _view(watcher, 1).animator.action != "walk": return "Local stop/audience delay was not preserved."
+	if _trainer(first, 1).animator.action != "idle" or _trainer(watcher, 1).animator.action != "walk": return "Local stop/audience delay was not preserved."
 	if not await _wait_for(func(): return _all_action("idle"), 1500): return "Stopped characters did not return to idle."
 	_key(first, KEY_W, true)
 	await create_timer(2.0).timeout
 	if not await _wait_for(func(): return _all_action("idle"), 2000): return "Walking into blocked terrain kept the walk action active."
 	_key(first, KEY_W, false)
 	var late = _new_client(true)
-	if not await _wait_for(func(): return late.game_arena.character_views.size() == 2, 2000): return "Late audience did not receive animated characters."
-	if _view(late, 1).animation_set == null or _view(late, 1).animator.action != "idle": return "Late audience did not render idle art."
+	if not await _wait_for(func(): return late.game_arena.trainer_views.size() == 2, 2000): return "Late audience did not receive animated characters."
+	if _trainer(late, 1).animation_set == null or _trainer(late, 1).animator.action != "idle": return "Late audience did not render idle art."
 	first.network.request_return_to_lobby()
 	if not await _wait_for(func(): return _all_phase(SessionSnapshot.Phase.LOBBY), 2000): return "Round reset did not clear character views."
 	for client in clients:
@@ -85,7 +87,7 @@ func _view(client: Node, owner: int):
 
 func _all_action(action: String) -> bool:
 	for client in clients:
-		for view in client.game_arena.character_views.values():
+		for view in client.game_arena.trainer_views.values():
 			if view.animator.action != action: return false
 	return true
 
@@ -95,3 +97,9 @@ func _key(client: Node, key: int, pressed: bool) -> void:
 	event.physical_keycode = key
 	event.pressed = pressed
 	client.game_arena._unhandled_key_input(event)
+
+
+func _trainer(client: Node, owner: int):
+	for view in client.game_arena.trainer_views.values():
+		if view.player_id == owner: return view
+	return null

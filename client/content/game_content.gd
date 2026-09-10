@@ -8,6 +8,7 @@ const ArenaCatalog = preload("res://content/arena_catalog.gd")
 const ArenaPresentation = preload("res://content/arena_presentation.gd")
 const TinySwordsTileset = preload("res://world/tiny_swords_tileset.gd")
 const TerrainTileset = preload("res://world/terrain_tileset.gd")
+const PlayerContent = preload("res://content/player_content.gd")
 # Sorted paths are part of the compatibility contract.
 const DATA_FILES := ["arenas.json", "characters.json", "terrains.json"]
 
@@ -22,6 +23,7 @@ var characters: Array[CharacterDefinition] = []
 var by_id: Dictionary = {}
 var visuals: Dictionary = {}
 var character_art: Dictionary = {}
+var player_content := PlayerContent.new()
 var arena_catalog := ArenaCatalog.new()
 var tile_set: TileSet
 var presentations: Dictionary = {}
@@ -45,6 +47,8 @@ func load_catalog(directory := "res://content/data") -> String:
 		files[relative_path] = bytes
 		parsed[relative_path] = parser.data
 	var error := _parse_characters(parsed["characters.json"])
+	if error.is_empty():
+		error = player_content.load_catalog()
 	if error.is_empty():
 		error = arena_catalog.parse_terrains(parsed["terrains.json"])
 	if error.is_empty():
@@ -79,6 +83,7 @@ func _clear() -> void:
 	by_id.clear()
 	visuals.clear()
 	character_art.clear()
+	player_content.art = null
 	fingerprint.clear()
 	arena_catalog.clear()
 	tile_set = null

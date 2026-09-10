@@ -47,8 +47,8 @@ func _run() -> void:
 	_expect(seen.size() == 10, "Shipped maps do not demonstrate every terrain type.")
 	world.queue_free()
 	await process_frame
-	_expect(GameProtocol.encode_command(GameProtocol.MessageKind.SELECT_ARENA, 0x04030201, 0, false, 2) == PackedByteArray([79, 71, 65, 65, 6, 9, 1, 2, 3, 4, 2, 0]), "SelectArena bytes differ from Odin.")
-	_expect(GameProtocol.encode_command(GameProtocol.MessageKind.SET_READY, 0x04030201, 4, true, 2) == PackedByteArray([79, 71, 65, 65, 6, 6, 1, 2, 3, 4, 4, 0, 2, 0, 1]), "SetReady bytes differ from Odin.")
+	_expect(GameProtocol.encode_command(GameProtocol.MessageKind.SELECT_ARENA, 0x04030201, 0, false, 2) == PackedByteArray([79, 71, 65, 65, 9, 9, 1, 2, 3, 4, 2, 0]), "SelectArena bytes differ from Odin.")
+	_expect(GameProtocol.encode_command(GameProtocol.MessageKind.SET_READY, 0x04030201, 4, true, 2) == PackedByteArray([79, 71, 65, 65, 9, 6, 1, 2, 3, 4, 4, 0, 2, 0, 1]), "SetReady bytes differ from Odin.")
 	if failures.is_empty():
 		print("PASS: full content digest, terrain/map validation, all 6720 rendered cells, terrain/elevation metadata, coordinates, spawn clearance, and arena command fixtures.")
 		quit(0)
@@ -94,7 +94,7 @@ func _check_elevation(directory: String) -> void:
 	var arena: ArenaCatalog.ArenaDefinition = catalog.arenas[0]
 	_expect(Movement.move(Vector2(63,48), 2, 12, arena, catalog) == Vector2(63,48), "Walked onto high ground without stairs.")
 	catalog.terrains_by_id[arena.cells[6]].key = "stairs"
-	_expect(Movement.move(Vector2(63,48), 2, 12, arena, catalog) == Vector2(66,48), "Stairs did not permit climbing.")
+	_expect(Movement.move(Vector2(63,48), 2, 12, arena, catalog) == Vector2(65,48), "Stairs did not permit climbing.")
 	_expect(catalog.step_is_allowed(arena, Vector2(80,48), Vector2(48,48)), "Stairs did not permit descending.")
 	arena.elevations[6] = 2
 	_expect(not catalog.step_is_allowed(arena, Vector2(48,48), Vector2(80,48)), "Stairs skipped multiple elevation levels.")

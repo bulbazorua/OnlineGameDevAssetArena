@@ -1,0 +1,4 @@
+{
+  "schema_version": 1,
+  "modules": {"player1": "res://players/packages/player1"}
+}

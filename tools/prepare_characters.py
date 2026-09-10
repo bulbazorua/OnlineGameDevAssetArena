@@ -24,13 +24,15 @@ def intact(root, entry):
         return False
 
 
-def prepare(root, godot):
+def prepare(root, godot, family="characters"):
+    if family not in ("characters", "players"):
+        raise ValueError("Unknown runtime art family")
     pipeline.ROOT = root
-    folder = root / "client/generated/characters"
+    folder = root / "client/generated" / family
     folder.mkdir(parents=True, exist_ok=True)
     with (folder / ".prepare.lock").open("w") as lock:
         fcntl.flock(lock, fcntl.LOCK_EX)
-        declarations = json.loads((root / "client/content/presentation/characters.json").read_text())
+        declarations = json.loads((root / "client/content/presentation" / (family + ".json")).read_text())
         if declarations.get("schema_version") != 1 or not isinstance(declarations.get("modules"), dict):
             raise ValueError("Invalid runtime character module declarations")
         previous = pipeline.read_json(folder / "catalog.json") or {}
@@ -53,7 +55,7 @@ def prepare(root, godot):
             if old.get("source_digest") == signature and intact(root, old):
                 bundle["modules"][key] = old
                 continue
-            result = pipeline.process(uri, godot)
+            result = pipeline.process(uri, godot, family=family)
             if result["status"] != "pass":
                 raise ValueError(f"Cannot bundle {key}: {result['stage']}: {result.get('error', '')}. Report: {result['report']}")
             digest = result["generation"]
@@ -71,16 +73,17 @@ def prepare(root, godot):
             bundle["modules"][key] = entry
         if bundle != previous:
             pipeline.write_json(folder / "catalog.json", bundle, atomic=True)
-        print("Runtime character art ready: " + ", ".join(bundle["modules"]), flush=True)
+        print(f"Runtime {family} art ready: " + ", ".join(bundle["modules"]), flush=True)
 
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--root", type=Path, default=Path(__file__).resolve().parents[1])
     parser.add_argument("--godot", default="godot")
+    parser.add_argument("--family", choices=("characters", "players"), default="characters")
     args = parser.parse_args()
     try:
-        prepare(args.root.resolve(), args.godot)
+        prepare(args.root.resolve(), args.godot, args.family)
     except (OSError, ValueError, KeyError, TypeError, subprocess.SubprocessError) as error:
         parser.exit(1, str(error) + "\n")
 

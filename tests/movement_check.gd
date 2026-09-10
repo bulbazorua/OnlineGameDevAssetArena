@@ -49,7 +49,7 @@ func _check() -> String:
 	var map = first.game_arena.world.definition
 	var spawn_one: Vector2 = map.cell_center(map.spawns[0])
 	var spawn_two: Vector2 = map.cell_center(map.spawns[1])
-	var first_id: int = initial.characters[0].entity_id
+	var first_id: int = initial.trainers[0].entity_id
 	for client in clients:
 		var game = client.game_arena
 		if game.character_views.size() != 2 or game.world.show_spawn_markers or game.countdown_label.visible: return "Arena entry did not replace markers/countdown with two characters."
@@ -62,20 +62,21 @@ func _check() -> String:
 			if visible_size.x > root.get_visible_rect().size.x - 48.0 + 1 or visible_size.y > root.get_visible_rect().size.y - 240.0 + 1: return "Overview cropped the arena or HUD."
 		elif game.camera_owner != client.network.player_id:
 			return "Player camera could be unlocked."
-		for state in client.network.session.characters:
-			var view = game.character_views[state.entity_id]
+		for state in client.network.session.trainers:
+			var view = game.trainer_views[state.entity_id]
 			var expected := spawn_one if state.owner_id == 1 else spawn_two
-			if state.position != expected or view.visual.character_id != state.owner_id + 2 or view.player_id != state.owner_id or view.is_local != (state.owner_id == client.network.player_id): return "Spawn identity, selected visual, ownership color/ring, or position was wrong."
+			if state.position != expected or view.animation_set == null or view.player_id != state.owner_id or view.is_local != (state.owner_id == client.network.player_id): return "Spawn identity, selected visual, ownership color/ring, or position was wrong."
 	if watcher.game_arena.return_button.visible: return "Audience can return fighters to lobby."
 
+	if not await _wait_for(func(): return clients.all(func(client): return client.network.session.summon_elapsed_ticks == 90)): return "Summoning did not finish."
 	# Prediction works while this client's incoming snapshots are paused.
 	first.network.set_process(false)
 	_key(first, KEY_D, true)
-	await create_timer(0.10).timeout
+	await create_timer(0.43).timeout
 	if first.game_arena.predicted_position.x <= spawn_one.x + 9 or first.game_arena._pending.is_empty(): return "Local input waited for incoming host snapshots."
 	first.network.set_process(true)
 	_key(second, KEY_LEFT, true)
-	await create_timer(0.28).timeout
+	await create_timer(0.65).timeout
 	_key(first, KEY_D, false)
 	_key(second, KEY_LEFT, false)
 	await create_timer(0.18).timeout
@@ -87,8 +88,8 @@ func _check() -> String:
 	if watcher.game_arena.camera.position.distance_to(_position(watcher, 2)) > 1: return "Audience could not follow P2."
 	watcher.game_arena.set_camera_owner(0)
 	for client in clients:
-		for state in client.network.session.characters:
-			if client.game_arena.character_views[state.entity_id].position.distance_to(state.position) > 1.0: return "A rendered character did not converge to the shared position."
+		for state in client.network.session.trainers:
+			if client.game_arena.trainer_views[state.entity_id].position.distance_to(state.position) > 1.0: return "A rendered character did not converge to the shared position."
 
 	var mid_match = _new_client(true)
 	if not await _wait_for(func(): return mid_match.network.session != null and mid_match.game_arena.character_views.size() == 2 and _positions_converged()): return "Mid-match audience did not receive current characters and positions."
@@ -122,7 +123,11 @@ func _check() -> String:
 	if _position(first, 1) != before: return "Host kept moving after focus loss."
 
 	# Lost heartbeats must stop the character even while the connection is alive.
+	_key(first, KEY_D, true)
+	await create_timer(0.45).timeout # Complete the planted step before losing heartbeats.
+	before = _position(first, 1)
 	first.game_arena.set_physics_process(false)
+	_key(first, KEY_D, false)
 	first.network.send_input(first.game_arena._sequence + 1, Movement.RIGHT)
 	await create_timer(0.36).timeout
 	var stopped: Vector2 = _position(first, 1)
@@ -144,18 +149,19 @@ func _check() -> String:
 	first.network.request_set_ready(1, true)
 	second.network.request_set_ready(2, true)
 	if not await _wait_for(func(): return _all_phase(SessionSnapshot.Phase.IN_ARENA)): return "Second match did not spawn."
-	if first.network.session.characters[0].entity_id <= first_id: return "Runtime entity IDs were reused."
+	if first.network.session.trainers[0].entity_id <= first_id: return "Runtime entity IDs were reused."
+	if not await _wait_for(func(): return clients.all(func(client): return client.network.session.summon_elapsed_ticks == 90)): return "Second summon did not finish."
 	_key(first, KEY_W, true)
 	_key(second, KEY_RIGHT, true)
-	await create_timer(2.5).timeout
+	if not await _wait_for(func(): return _position(first, 1).y < 364.6 and _position(first, 2).x > 1843.4): return "Players did not reach the cliff/forest collision edges after preparation."
 	_key(first, KEY_W, false)
 	_key(second, KEY_RIGHT, false)
 	await create_timer(0.18).timeout
 	if not await _wait_for(_positions_converged): return "Collision positions did not converge."
-	if _position(first, 1).y < 364 or _position(first, 1).y >= 367 or _position(first, 2).x > 1844 or _position(first, 2).x <= 1841: return "The host allowed crossing cliffs/forest or blocked movement too early."
+	if _position(first, 1).y < 361.6 or _position(first, 1).y >= 364.6 or _position(first, 2).x > 1846.4 or _position(first, 2).x <= 1843.4: return "The host allowed crossing cliffs/forest or blocked movement too early."
 	var arena = first.game_arena.world.definition
 	var diagonal := Movement.move(spawn_one, 10, 12, arena, first.content.arena_catalog)
-	if absf(diagonal.distance_to(spawn_one) - 3.0) > 0.001: return "Client diagonal movement is faster than cardinal movement."
+	if absf(diagonal.distance_to(spawn_one) - 2.0) > 0.001: return "Client diagonal movement is faster than cardinal movement."
 	var cliff_stop := Vector2(spawn_one.x, 364)
 	if Movement.move(cliff_stop, 4, 12, arena, first.content.arena_catalog) != cliff_stop: return "Client prediction disagrees with host cliff collision."
 	second.network.disconnect_from_host()
@@ -178,7 +184,7 @@ func _all_phase(phase: int) -> bool:
 
 
 func _position(client: Node, owner: int) -> Vector2:
-	for character in client.network.session.characters:
+	for character in client.network.session.trainers:
 		if character.owner_id == owner: return character.position
 	return Vector2.INF
 
@@ -200,16 +206,21 @@ func _key(client: Node, key: int, pressed: bool) -> void:
 
 
 func _check_wire() -> String:
-	var bytes := PackedByteArray([79, 71, 65, 65, 6, 11, 1, 2, 3, 4, 5, 6, 7, 8, 2,
-		1, 0, 0, 0, 3, 0, 1, 0, 144, 0, 0, 0, 240, 0, 0, 9, 10, 11, 12, 6,
-		2, 0, 0, 0, 4, 0, 2, 0, 240, 1, 0, 0, 240, 0, 0, 0, 0, 0, 0, 0])
+	var bytes := PackedByteArray([79, 71, 65, 65, 9, 11, 1, 2, 3, 4, 5, 6, 7, 8, 2, 1, 0, 0, 0, 3,
+		0, 1, 0, 144, 0, 0, 0, 240, 0, 0, 0, 0, 0, 0, 0, 2, 0, 0, 0, 4,
+		0, 2, 0, 240, 1, 0, 0, 240, 0, 0, 0, 0, 0, 0, 0, 3, 0, 0, 0, 1,
+		0, 1, 0, 112, 0, 0, 0, 240, 0, 0, 9, 10, 11, 12, 6, 4, 0, 0, 0, 1,
+		0, 2, 0, 16, 2, 0, 0, 240, 0, 0, 0, 0, 0, 0, 0, 90, 0, 1, 2, 0, 6, 7, 8, 0, 6, 4, 5, 6, 7,
+		1, 1, 0, 6, 7, 8, 0, 6, 4, 5, 6, 7])
 	var decoded := GameProtocol.decode(bytes, 1)
-	if not decoded.error_title.is_empty() or decoded.session.round_id != 0x04030201 or decoded.session.server_tick != 0x08070605 or decoded.session.characters[0].position != Vector2(144, 240) or decoded.session.characters[1].position != Vector2(496, 240) or decoded.session.characters[0].applied_input_sequence != 0x0c0b0a09: return "World-state fixture differs from Odin."
+	if not decoded.error_title.is_empty() or decoded.session.round_id != 0x04030201 or decoded.session.server_tick != 0x08070605 or decoded.session.characters[0].position != Vector2(144, 240) or decoded.session.characters[1].position != Vector2(496, 240) or decoded.session.trainers[0].applied_input_sequence != 0x0c0b0a09 or decoded.session.summon_elapsed_ticks != 90: return "World-state fixture differs from Odin."
+	if decoded.session.characters[0].locomotion != 1 or decoded.session.characters[0].facing != 2 or decoded.session.characters[0].state_start_tick != 0x08070600 or decoded.session.characters[1].facing != 6: return "Character locomotion wire fields differ from Odin."
+	if decoded.session.trainers[0].locomotion != 1 or decoded.session.trainers[0].facing != 1 or decoded.session.trainers[0].state_start_tick != 0x08070600 or decoded.session.trainers[1].facing != 6: return "Trainer action clock differs from Odin."
 	var input := GameProtocol.encode_input(0x04030201, 0x0c0b0a09, 6)
-	if input != PackedByteArray([79, 71, 65, 65, 6, 10, 1, 2, 3, 4, 9, 10, 11, 12, 6]): return "Input fixture differs from Odin."
+	if input != PackedByteArray([79, 71, 65, 65, 9, 10, 1, 2, 3, 4, 9, 10, 11, 12, 6]): return "Input fixture differs from Odin."
 	for length in bytes.size():
 		if GameProtocol.decode(bytes.slice(0, length), 1).error_title.is_empty(): return "Truncated world packet was accepted."
-	for edit in [[14, 1], [15, 0], [19, 0], [21, 0], [34, 16], [35, 1], [41, 1]]:
+	for edit in [[14, 1], [15, 0], [19, 0], [21, 0], [34, 16], [35, 1], [41, 1], [55, 1], [59, 2], [61, 0], [75, 3], [81, 1], [95, 91], [97, 2], [98, 8], [99, 255], [109, 2], [110, 8], [111, 255], [4, 8]]:
 		var corrupt := bytes.duplicate()
 		corrupt[edit[0]] = edit[1]
 		if GameProtocol.decode(corrupt, 1).error_title.is_empty(): return "Invalid world state was accepted: " + str(edit)

@@ -14,6 +14,7 @@ P2 ?= square
 ARENA ?= meadow_crossing
 AUDIENCE ?= 0
 AUDIENCE_DELAY ?= 5
+SEED ?= 1
 ASSET_SOURCE ?= $(HOME)/CONTENT_CREATION/BulbaZorua/GameAssets/Tiny Swords (Free Pack)/Tiny Swords (Free Pack)
 CHARACTER ?= reference16
 PLAYER ?= player1
@@ -25,15 +26,19 @@ HEADLESS ?= 0
 DEV_RUN_SECONDS ?= 0
 
 .PHONY: help build_server run_server run_client run_audience check_client check_session check_connection check_selection check_content check_arena_content check_arena_selection check_movement import_client check ccx cc
-.PHONY: dev_arena check_dev
+.PHONY: dev_arena check_dev check_ai check_character_ai
 .PHONY: import_tiny_swords check_tiny_swords_assets check_tiny_swords
 .PHONY: check_land check_camera check_audience_delay
 .PHONY: character_harness process_character check_character_contract check_asset_pipeline
 .PHONY: check_character_modules
 .PHONY: prepare_characters check_playable_characters import_runtime_client
-.PHONY: player_harness process_player check_player_harness
+.PHONY: player_harness process_player check_player_harness prepare_players check_trainers
 
 help:
+	@echo "make check_character_ai - verify autonomous idle/walk and delayed audience state"
+	@echo "SEED=42 sets a reproducible character AI seed for run_server or dev_arena"
+	@echo "make check_trainers - verify arena trainers, host-timed summoning and audience views"
+	@echo "make prepare_players - process and bundle Player1 for arena clients"
 	@echo "make player_harness [PLAYER=player1] - isolated trainer art workbench, all eight states required"
 	@echo "make process_player [PLAYER=player1] - process trainer originals with provenance and reports"
 	@echo "make check_player_harness - verify player contract, processing, sizing and preview controls"
@@ -81,10 +86,10 @@ build_server: build/deps/libenet.a
 	$(ODIN) build server -out:build/server -debug -extra-linker-flags:"-L$(abspath build/deps)"
 
 run_server: build_server
-	./build/server --bind=$(SERVER_BIND) --port=$(SERVER_PORT) --content-dir="$(CONTENT_DIR)" --audience-delay="$(AUDIENCE_DELAY)"
+	./build/server --bind=$(SERVER_BIND) --port=$(SERVER_PORT) --content-dir="$(CONTENT_DIR)" --audience-delay="$(AUDIENCE_DELAY)" --seed="$(SEED)"
 
 dev_arena:
-	$(PYTHON) tools/dev_session.py --p1="$(P1)" --p2="$(P2)" --arena="$(ARENA)" --audience="$(AUDIENCE)" --audience-delay="$(AUDIENCE_DELAY)" --countdown="$(COUNTDOWN)" --watch="$(WATCH)" --godot="$(GODOT)" --odin="$(ODIN)" --run-seconds="$(DEV_RUN_SECONDS)" $(if $(filter 1,$(HEADLESS)),--headless)
+	$(PYTHON) tools/dev_session.py --p1="$(P1)" --p2="$(P2)" --arena="$(ARENA)" --audience="$(AUDIENCE)" --audience-delay="$(AUDIENCE_DELAY)" --seed="$(SEED)" --countdown="$(COUNTDOWN)" --watch="$(WATCH)" --godot="$(GODOT)" --odin="$(ODIN)" --run-seconds="$(DEV_RUN_SECONDS)" $(if $(filter 1,$(HEADLESS)),--headless)
 
 run_client: import_runtime_client
 	$(GODOT) --path client $(CLIENT_ARGS) -- --host=$(SERVER_HOST) --port=$(SERVER_PORT) $(if $(filter 1,$(DEV)),--dev)
@@ -98,7 +103,10 @@ prepare_characters:
 import_client:
 	$(GODOT) --headless --path client --editor --import
 
-import_runtime_client: prepare_characters
+prepare_players:
+	$(PYTHON) tools/prepare_characters.py --godot="$(GODOT)" --family=players
+
+import_runtime_client: prepare_characters prepare_players
 	$(GODOT) --headless --path client --editor --import
 
 check_client: import_runtime_client
@@ -107,7 +115,11 @@ check_client: import_runtime_client
 check_connection: build_server check_client
 	$(GODOT) --headless --path client --script $(abspath tests/connection_check.gd) -- --server=$(abspath build/server)
 
-check_session: build/deps/libenet.a
+check_ai:
+	@mkdir -p build
+	$(ODIN) test server/ai -out:build/ai_tests
+
+check_session: build/deps/libenet.a check_ai
 	$(ODIN) test server -out:build/session_tests -extra-linker-flags:"-L$(abspath build/deps)"
 
 check_dev: build_server check_session
@@ -173,7 +185,13 @@ check_character_contract: check_client
 	$(GODOT) --headless --path client --script $(abspath tests/character_contract_check.gd)
 	$(PYTHON) tests/character_module_isolation_check.py --godot="$(GODOT)"
 
-check: check_player_harness check_character_contract check_asset_pipeline check_character_modules check_playable_characters check_tiny_swords check_content check_arena_content check_connection check_selection check_arena_selection check_movement check_land check_camera check_audience_delay check_dev
+check_trainers: build_server check_client
+	$(GODOT) --headless --path client --script $(abspath tests/player_step_check.gd) -- --server=$(abspath build/server)
+
+check_character_ai: build_server check_client check_session
+	$(GODOT) --headless --path client --script $(abspath tests/character_ai_check.gd) -- --server=$(abspath build/server)
+
+check: check_character_ai check_trainers check_player_harness check_character_contract check_asset_pipeline check_character_modules check_playable_characters check_tiny_swords check_content check_arena_content check_connection check_selection check_arena_selection check_movement check_land check_camera check_audience_delay check_dev
 
 ccx:
 	codex --dangerously-bypass-approvals-and-sandbox

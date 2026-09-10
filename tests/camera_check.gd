@@ -30,7 +30,7 @@ func _check() -> String:
 	var second = _new_client()
 	var audience = _new_client(true)
 	var other_audience = _new_client(true)
-	if not await _wait_for(func(): return clients.all(func(client): return client.network.session != null and client.game_arena.character_views.size() == 2)): return "Four clients did not enter the arena."
+	if not await _wait_for(func(): return clients.all(func(client): return client.network.session != null and client.game_arena.trainer_views.size() == 2)): return "Four clients did not enter the arena."
 	await create_timer(0.1).timeout
 	for fighter in [first, second]:
 		if fighter.game_arena.get_node("%AudienceControls").visible: return "Fighter has spectator camera buttons."
@@ -129,14 +129,14 @@ func _check() -> String:
 
 func _fighter_centered(client: Node) -> bool:
 	var game = client.game_arena
-	var character: Node2D = game.character_views[game._local_entity]
+	var character: Node2D = game.trainer_views[game._local_entity]
 	game.camera.force_update_scroll()
 	var screen_position := character.get_global_transform_with_canvas().origin
 	return game.camera_owner == client.network.player_id and game.camera.zoom == Vector2.ONE * ArenaCamera.PLAYER_ZOOM and screen_position.distance_to(client.get_viewport().get_visible_rect().size * 0.5) < 0.1
 
 
 func _positions(client: Node) -> Array:
-	return client.network.session.characters.map(func(character): return character.position)
+	return client.network.session.trainers.map(func(character): return character.position)
 
 
 func _key(client: Node, key: int, pressed: bool) -> void:

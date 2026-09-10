@@ -24,7 +24,7 @@ func _check() -> String:
 	for client in clients:
 		if arena.elevation_at(arena.world_to_cell(_position(client))) != 1 or _position(client).distance_to(_position(first)) > 0.01:
 			return "High-ground position did not replicate to every client."
-		if client.game_arena.character_views[client.network.session.characters[0].entity_id].position.distance_to(_position(first)) > 1:
+		if client.game_arena.trainer_views[client.network.session.trainers[0].entity_id].position.distance_to(_position(first)) > 1:
 			return "Prediction/rendering disagreed with stair ascent."
 	_key(first, KEY_S, true)
 	if not await _wait_for(func(): return _position(first).y >= 400): return "Host blocked stair descent."
@@ -45,7 +45,7 @@ func _check() -> String:
 
 
 func _position(client: Node) -> Vector2:
-	return client.network.session.characters[0].position
+	return client.network.session.trainers[0].position
 
 
 func _key(client: Node, key: int, pressed: bool) -> void:

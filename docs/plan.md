@@ -1,8 +1,12 @@
 # Asset Arena roadmap
 
-The separate [Player1 trainer harness](05-player-harness.md) now validates all eight required player animation states, with its own import package and processed outputs. Trainer gameplay and advice-driven gladiator behavior follow later.
+**Checkpoint 6A is implemented:** [autonomous idle/walk](06b-autonomous-idle-walk.md). Each character has private AI state, a seeded wander tactic and a shared intent/action path. Public movement reaches both players and delayed audience. [Sensing, composable strategies and learning](06-character-ai-orchestration-proposal.md) remain phased follow-up work.
 
-The working game now includes **checkpoint 4C: selectable Archer and Orc**, using independently processed art, calibrated bodies, idle/walk animation and development action labels. All five asset folders were audited; Lancer, Warrior and Monk still lack required animations. Gameplay combat states, damage, projectiles and AI remain subsequent checkpoints. The default five-second audience delay remains.
+The [trainer arena checkpoint](05a-trainers-and-summoning.md) adds trainer-controlled movement and a host-timed summon sequence for the selected gladiators. Protocol version 7 introduced separate trainer and gladiator entities.
+
+The separate [Player1 trainer harness](05-player-harness.md) now validates all eight required player animation states, with its own import package and processed outputs. Trainer movement/summoning are implemented in 5B; advice-driven gladiator behavior follows later.
+
+The working game now includes **checkpoint 4C: selectable Archer and Orc**, using independently processed art, calibrated bodies, idle/walk animation and development action labels. All five asset folders were audited; Lancer, Warrior and Monk still lack required animations. Gameplay combat states, damage, projectiles and strategic AI remain subsequent checkpoints. The default five-second audience delay remains.
 
 | Phase | Status | Result |
 | --- | --- | --- |
@@ -30,6 +34,10 @@ The working game now includes **checkpoint 4C: selectable Archer and Orc**, usin
 | [4 — Gameplay size](04b-gameplay-size-proposal.md) | Body scaling proven in 4A | Equal body reference size and a fixed world ruler; authoritative character geometry integration follows later. |
 | [4 — Asset pipeline](04a-asset-pipeline-proposal.md) | Import foundation implemented; later integration proposed | Isolated imports and processed previews are in place; isolated movement, shared melee/projectiles and admission follow. |
 | [5A — Player trainer art harness](05-player-harness.md) | Implemented | Separate eight-state trainer contract, Player1 importer, processed player generations and independent previews; no trainer gameplay integration yet. |
-| AI, combat, terrain effects | Later planning | Build on live character instances and the server-owned map. |
+| [5B — Arena trainers and summoning](05a-trainers-and-summoning.md) | Implemented | Player1 trainers move independently and summon selected gladiators on a shared host timeline, including delayed audience and late joins. |
+| [5B.1 — Player first-step timing](05b-player-walk-timing.md) | Implemented | Player1 starts with lift/plant poses before translation; host, prediction and audience share trainer action clocks. |
+| [6A — Autonomous idle and walk](06b-autonomous-idle-walk.md) | Implemented | Private per-character runtime, a shared intent/action boundary, seeded wandering and delayed public movement state. |
+| [6B–6F — Senses, combat strategies and learning](06-character-ai-orchestration-proposal.md) | Proposed direction | Observer-specific evidence, shared abilities, composable tactics, trainer advice and later persistent opponent learning, in separate checkpoints. |
+| Terrain effects | Later planning | Build on typed terrain and authoritative gameplay. |
 
-Implement and verify one checkpoint at a time. The Phase 3 document lists the proposed filenames, classes, Odin types/procedures, message layouts, and acceptance checks. The [current protocol](protocol.md) is version 6. Both Ready now starts the countdown and then enters the playable arena.
+Implement and verify one checkpoint at a time. The Phase 3 document lists the proposed filenames, classes, Odin types/procedures, message layouts, and acceptance checks. The [current protocol](protocol.md) is version 9. Both Ready now starts the countdown and then enters the playable arena.

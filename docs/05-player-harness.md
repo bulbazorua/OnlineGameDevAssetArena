@@ -3,8 +3,9 @@
 Implemented as an isolated art checkpoint. The trainer/player now has its own
 versioned contract, package registry, Player1 importer and harness. The gladiators
 (Archer/Orc) keep their five-state combat contract. Player1 is a trainer choice in
-the workbench; arena trainer spawning, movement, advice events, bonds and gladiator
-AI are subsequent checkpoints.
+the workbench; arena trainer spawning and movement are implemented in
+[the trainer gameplay checkpoint](05a-trainers-and-summoning.md). Advice events,
+bonds and gladiator AI remain subsequent checkpoints.
 
 ## Run
 
@@ -44,6 +45,10 @@ a new contract version and explicit migration support.
 
 Every state requires a real clip, a `default` variant and bindings for all eight
 logical facings. Idle permits one frame; the other states require at least two.
+Walk playback starts at source pose 3 and cycles through `3,4,5,6,7,8,1,2` so
+passing and lift precede the first foot plant. See [the gait analysis and runtime
+timing](05b-player-walk-timing.md).
+
 Player1's source layout requires eight walk poses and six per other sheet. There are no silent
 idle substitutions. Missing any role fails the art check and blocks publication.
 

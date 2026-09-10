@@ -147,6 +147,9 @@ func _receive_message(message: GameProtocol.DecodedMessage) -> void:
 			# Channel 1 may have newer positions than reliable membership updates.
 			if session != null and session.phase == SessionSnapshot.Phase.IN_ARENA and message.session.phase == session.phase and session.round_id == message.session.round_id and GameProtocol.serial_is_newer(session.server_tick, message.session.server_tick):
 				message.session = message.session.with_world(session)
+			if session != null and session.phase == SessionSnapshot.Phase.IN_ARENA and message.session.phase == session.phase and session.round_id == message.session.round_id and not _world_continuity(message.session):
+				_close_connection("Invalid host reply", "The host changed an entity or restarted summoning during play.", true)
+				return
 			# Replace the snapshot; screens only read the published state.
 			var first_state := session == null
 			session = message.session
@@ -160,14 +163,9 @@ func _receive_message(message: GameProtocol.DecodedMessage) -> void:
 			if not _positions_valid(message.session, session.map_id):
 				_close_connection("Invalid host reply", "A character position is outside the arena.", true)
 				return
-			for character in message.session.characters:
-				var matched := false
-				for previous in session.characters:
-					if previous.entity_id == character.entity_id and previous.definition_id == character.definition_id and previous.owner_id == character.owner_id:
-						matched = true
-				if not matched:
-					_close_connection("Invalid host reply", "The host changed a character identity during play.", true)
-					return
+			if not _world_continuity(message.session):
+				_close_connection("Invalid host reply", "The host changed an entity or restarted summoning during play.", true)
+				return
 			session = session.with_world(message.session)
 			world_changed.emit(session)
 
@@ -262,6 +260,25 @@ func _positions_valid(snapshot: SessionSnapshot, map_id: int) -> bool:
 		# Fixed-point rounding can differ from the host by half of 1/256 unit.
 		if character.position.x < radius - 0.004 or character.position.y < radius - 0.004 or character.position.x > arena.width * arena.tile_size - radius + 0.004 or character.position.y > arena.height * arena.tile_size - radius + 0.004:
 			return false
+	for trainer in snapshot.trainers:
+		if trainer.definition_id != GameProtocol.TRAINER_DEFINITION_ID: return false
+		var radius := GameProtocol.TRAINER_RADIUS
+		if trainer.position.x < radius - 0.004 or trainer.position.y < radius - 0.004 or trainer.position.x > arena.width * arena.tile_size - radius + 0.004 or trainer.position.y > arena.height * arena.tile_size - radius + 0.004:
+			return false
+	return true
+
+
+func _world_continuity(next: SessionSnapshot) -> bool:
+	if next.summon_elapsed_ticks < session.summon_elapsed_ticks: return false
+	for pair in [[next.characters, session.characters], [next.trainers, session.trainers]]:
+		if pair[0].size() != pair[1].size(): return false
+		for entity in pair[0]:
+			var matched := false
+			for previous in pair[1]:
+				if previous.entity_id == entity.entity_id and previous.definition_id == entity.definition_id and previous.owner_id == entity.owner_id:
+					if entity is SessionSnapshot.CharacterState and GameProtocol.serial_is_newer(previous.state_start_tick, entity.state_start_tick): return false
+					matched = true
+			if not matched: return false
 	return true
 
 

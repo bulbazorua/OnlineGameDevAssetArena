@@ -1,6 +1,6 @@
 # Project structure: one repository, two programs
 
-Status: [Player1 trainer harness](05-player-harness.md) adds a separate eight-state player art contract, importer, registry and preview scene. [Checkpoint 4C: selectable characters](04i-playable-characters.md) adds Archer/Orc to selection and the arena with processed runtime art, idle/walk playback and development action labels. [Checkpoint 3J: Tiny Swords Village](03j-tiny-swords-village.md) remains the latest map checkpoint. Shared combat follows later. [Phase 1: Host connection](01-host-connection.md) covers build requirements.
+Status: [Arena trainers and summoning](05a-trainers-and-summoning.md) adds trainer movement and a host-timed summon effect, with separate trainer/gladiator entities. [Player1 trainer harness](05-player-harness.md) adds a separate eight-state player art contract, importer, registry and preview scene. [Checkpoint 4C: selectable characters](04i-playable-characters.md) adds Archer/Orc to selection and the arena with processed runtime art, idle/walk playback and development action labels. [Checkpoint 3J: Tiny Swords Village](03j-tiny-swords-village.md) remains the latest map checkpoint. Shared combat follows later. [Phase 1: Host connection](01-host-connection.md) covers build requirements.
 
 [Checkpoint 4A.1](04g-character-asset-processing.md) adds original fixture PNGs under `asset_sources/`, immutable processing attempts under `build/asset-jobs/`, and saved artifacts under `build/processed/characters/`. The harness consumes processed artifacts; source interpretation runs in a separate processing worker.
 
@@ -26,7 +26,7 @@ OnlineGameDevAssetArena/
 │   ├── main.gd                     AppController: content, screen routing, signals, CLI
 │   ├── network/
 │   │   ├── game_connection.gd      ENet lifecycle and decoded state
-│   │   └── protocol.gd             Version 6 packet codec
+│   │   └── protocol.gd             Version 9 packet codec
 │   ├── session/
 │   │   └── session_snapshot.gd     Decoded session, countdown, tick, and live characters
 │   ├── dev/
@@ -91,7 +91,11 @@ OnlineGameDevAssetArena/
 │   ├── audience.odin               Shared bounded spectator history and timed release
 │   ├── audience_test.odin          Delay timing, copies, ring bounds, Welcome bytes
 │   ├── network.odin                ENet lifecycle and session updates
-│   ├── protocol.odin               Version 6 packet codec
+│   ├── ai/                         Pure per-character decisions, wander tactic and PRNG
+│   ├── simulation.odin             Public session plus private battle owner
+│   ├── battle.odin                 Context preparation, AI intents and execution adapter
+│   ├── character_actions.odin      Shared voluntary action resolver and locomotion
+│   ├── protocol.odin               Version 9 packet codec
 │   ├── session.odin                Membership, phase, picks, Ready, reset
 │   ├── characters.odin             Character_Definition
 │   ├── movement.odin               Live Character, countdown/spawn, fixed movement
@@ -130,7 +134,7 @@ OnlineGameDevAssetArena/
 │   ├── 04i-playable-characters.md  Runtime bundles, selectable art, motion labels and asset audit
 │   ├── 05-player-harness.md        Trainer contract, Player1 processing and harness
 │   ├── project-structure.md        This document
-│   ├── protocol.md                 Version 6 messages and content contract
+│   ├── protocol.md                 Version 9 messages and content contract
 │   └── plan.md                     Roadmap and implementation status
 ├── tools/
 │   ├── process_character_assets.py  Source/code snapshots, processing reports and publication
@@ -193,6 +197,8 @@ The root `Makefile` provides the entry point for both programs:
 
 | Command | Purpose |
 | --- | --- |
+| `make prepare_players` | Process and bundle Player1 for arena clients |
+| `make check_trainers` | Verify trainer authority, summon timing, delayed audience and cancellation |
 | `make player_harness PLAYER=player1` | Process and preview all eight required trainer states |
 | `make process_player PLAYER=player1` | Publish validated player art under build/processed/players |
 | `make check_player_harness` | Check isolated player imports, required roles and preview controls |
@@ -219,7 +225,7 @@ The root `Makefile` provides the entry point for both programs:
 | `make run_client DEV=1` / `make run_audience DEV=1` | Show the development FPS/ping overlay |
 | `make check_movement` | Check countdown, live movement, cameras, and replay |
 | `make check_connection` | Run the local connection integration check |
-| `make check_session` | Check Odin session/content rules and version 6 bytes |
+| `make check_session` | Check Odin session/content rules and version 9 bytes |
 | `make check_content` | Verify content readers, visuals, and digest/wire fixtures |
 | `make check_selection` | Exercise selection, Ready, audience, and reset |
 | `make check_arena_content` | Check map cells, terrain metadata, and coordinates |
@@ -236,4 +242,14 @@ Keep generated output in `build/` and ignore it in Git. Also ignore the Godot ca
 
 ## Current checkpoint boundary
 
-Both players can choose characters and a shared map, then press Ready. The host runs **5, 4, 3, 2, 1** and spawns both selected characters. Fighters move with WASD/arrows, climb terraces via stairs, and keep their own character centered at fixed zoom. Each audience member starts with a whole-map view, can pan and zoom independently, and can optionally follow either player. Either fighter can return the session to Lobby. Combat, AI, and terrain bonuses remain later phases.
+Both players can choose characters and a shared map, then press Ready. The host runs **5, 4, 3, 2, 1**, places both trainers and runs a 1.5-second summon sequence for their selected gladiators. Fighters move their trainers with WASD/arrows, climb terraces via stairs, and keep their trainer centered at fixed zoom. Characters independently idle and walk within their summon area through the server AI orchestrator. Each audience member starts with a whole-map view, can pan and zoom independently, and can optionally follow either player. Either fighter can return the session to Lobby. Combat, senses, adaptive learning and terrain bonuses remain later phases.
+
+## Autonomous character AI
+
+[Checkpoint 6A](06b-autonomous-idle-walk.md) implements the pure `server/ai` package,
+private `Battle_Runtime`, `Simulation` owner and Godot `CharacterMotionPresenter`.
+Public session snapshots stay separate from future senses and cognitive memory.
+The [architecture roadmap](06-character-ai-orchestration-proposal.md) retains the
+later sensing, strategy and learning phases. Current transport uses protocol v9.
+
+Player1 walk preparation and prediction are described in [Player1 walk timing](05b-player-walk-timing.md). `client/players/trainer_movement.gd` mirrors `trainer_tick_motion`; `tests/player_step_check.gd` checks processed lift/plant poses and extends the trainer integration check.

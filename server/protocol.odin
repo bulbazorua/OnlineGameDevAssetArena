@@ -2,7 +2,7 @@ package main
 
 import "core:math"
 
-PROTOCOL_HEADER :: [5]u8{'O', 'G', 'A', 'A', 6}
+PROTOCOL_HEADER :: [5]u8{'O', 'G', 'A', 'A', 9}
 Message_Kind :: enum u8 {
     Hello = 1, Welcome = 2, Session_State = 3,
     Start_Selection = 4, Select_Character = 5, Set_Ready = 6,
@@ -83,7 +83,7 @@ protocol_encode_welcome :: proc(player_id: u8, audience_delay_ms: u32 = 0) -> (r
     return
 }
 
-protocol_encode_session :: proc(session: ^Session) -> (result: [72]u8) {
+protocol_encode_session :: proc(session: ^Session) -> (result: [138]u8) {
     protocol_header(result[:], .Session_State)
     protocol_write_u32(result[6:], session.round_id)
     protocol_write_u32(result[10:], session.revision)
@@ -95,6 +95,12 @@ protocol_encode_session :: proc(session: ^Session) -> (result: [72]u8) {
     protocol_write_u32(result[27:], session.server_tick)
     result[31] = session.character_count
     for index in 0..<int(session.character_count) { protocol_write_character(result[32 + index * 20:], &session.characters[index]) }
+    if session.character_count == 2 {
+        for index in 0..<MAX_PLAYERS { protocol_write_character(result[72 + index * 20:], &session.trainers[index]) }
+        protocol_write_u16(result[112:], session.summon_elapsed_ticks)
+        for index in 0..<MAX_PLAYERS { protocol_write_locomotion(result[114 + index * 6:], &session.characters[index]) }
+        for index in 0..<MAX_PLAYERS { protocol_write_locomotion(result[126 + index * 6:], &session.trainers[index]) }
+    }
     for player, index in session.players {
         offset := 20 + index * 3
         protocol_write_u16(result[offset:], player.character_id)
@@ -111,7 +117,7 @@ protocol_encode_rejection :: proc(round_id: u32, kind: Message_Kind, reason: Com
     return
 }
 
-protocol_session_size :: proc(session: ^Session) -> int { return 32 + int(session.character_count) * 20 }
+protocol_session_size :: proc(session: ^Session) -> int { return 138 if session.character_count == 2 else 32 }
 
 protocol_write_character :: proc(bytes: []u8, character: ^Character) {
     protocol_write_u32(bytes, character.entity_id)
@@ -123,12 +129,22 @@ protocol_write_character :: proc(bytes: []u8, character: ^Character) {
     bytes[19] = character.input_mask
 }
 
-protocol_encode_world :: proc(session: ^Session) -> (result: [55]u8) {
+protocol_encode_world :: proc(session: ^Session) -> (result: [121]u8) {
     assert(session.phase == .In_Arena && session.character_count == 2)
     protocol_header(result[:], .World_State)
     protocol_write_u32(result[6:], session.round_id)
     protocol_write_u32(result[10:], session.server_tick)
     result[14] = session.character_count
     for index in 0..<MAX_PLAYERS { protocol_write_character(result[15 + index * 20:], &session.characters[index]) }
+    for index in 0..<MAX_PLAYERS { protocol_write_character(result[55 + index * 20:], &session.trainers[index]) }
+    protocol_write_u16(result[95:], session.summon_elapsed_ticks)
+    for index in 0..<MAX_PLAYERS { protocol_write_locomotion(result[97 + index * 6:], &session.characters[index]) }
+    for index in 0..<MAX_PLAYERS { protocol_write_locomotion(result[109 + index * 6:], &session.trainers[index]) }
     return
+}
+
+protocol_write_locomotion :: proc(bytes: []u8, character: ^Character) {
+    bytes[0] = u8(character.locomotion)
+    bytes[1] = u8(character.facing)
+    protocol_write_u32(bytes[2:], character.state_start_tick)
 }

@@ -55,7 +55,7 @@ def main():
                        "if '--dev' in args:\n    args = ['--script', " + repr(str(sandbox / "tests/dev_client_driver.gd")) + "] + args\n"
                        "os.execvp(" + repr(args.godot) + ", [" + repr(args.godot) + "] + args)\n")
     wrapper.chmod(0o755)
-    base = [sys.executable, str(sandbox / "tools/dev_session.py"), "--godot", str(wrapper), "--odin", args.odin, "--audience-delay", "0"]
+    base = [sys.executable, str(sandbox / "tools/dev_session.py"), "--godot", str(wrapper), "--odin", args.odin, "--audience-delay", "0", "--seed", "42"]
     if not args.graphical:
         base.append("--headless")
     bad = subprocess.run(base + ["--p1", "not_a_character"], capture_output=True, text=True)
@@ -66,6 +66,9 @@ def main():
         invalid_host = subprocess.run([str(ROOT / "build/server"), f"--audience-delay={value}"], capture_output=True, text=True)
         assert invalid_host.returncode != 0 and "audience-delay" in invalid_host.stderr
     assert not (sandbox / "build/dev").exists(), "Invalid choices started a session"
+    for seed in ("-1", "4294967296", "nan"):
+        invalid = subprocess.run(base + ["--seed", seed], capture_output=True, text=True)
+        assert invalid.returncode != 0
     owned = set()
     process = None
     probe = None
@@ -100,24 +103,24 @@ def main():
             time.sleep(0.3)
 
         initial = session()
-        spawn_y = statuses()[0]["characters"][0]["y"]
+        spawn_y = statuses()[0]["trainers"][0]["y"]
         assert [s["player_id"] for s in statuses()] == [1, 2, 0]
         assert all(s["phase"] == 3 and s["map"] == 2 and s["camera_enabled"] for s in statuses())
         assert all([c["definition"] for c in s["characters"]] == [3, 4] for s in statuses())
         command(1, move=True)
         before = statuses()
-        assert all(s["characters"][0]["y"] > spawn_y + 15 for s in before), "Movement not replicated"
-        position = before[0]["characters"][0]["y"]
+        assert all(s["trainers"][0]["y"] > spawn_y + 15 for s in before), "Movement not replicated"
+        position = before[0]["trainers"][0]["y"]
         visual = sandbox / "client/characters/visuals/triangle.tres"
         visual.write_text(visual.read_text() + "tint = Color(0.4, 1, 0.4, 1)\n")
         wait(lambda: session().get("visual_generation") == 1, "visual hot reload")
         after = statuses()
         assert session()["pids"] == initial["pids"], "Visual reload restarted processes"
         assert all(s["visuals"]["3"]["tint"] == "66ff66ff" for s in after)
-        assert all(s["round"] == before[0]["round"] and abs(s["characters"][0]["y"] - position) < 0.01 for s in after)
+        assert all(s["round"] == before[0]["round"] and abs(s["trainers"][0]["y"] - position) < 0.01 for s in after)
         assert after[0]["sequence"] > before[0]["sequence"]
         command(2, move=True)
-        assert all(s["characters"][0]["y"] > position + 15 for s in statuses()), "Movement failed after live reload"
+        assert all(s["trainers"][0]["y"] > position + 15 for s in statuses()), "Movement failed after live reload"
         old_texture = read(directory / "driver-p1.json")["texture_hash"]
         visual.write_text(visual.read_text().replace("tint = Color(0.4, 1, 0.4, 1)\n", ""))
         wait(lambda: session().get("visual_generation") == 2, "default visual property reload")
@@ -148,13 +151,13 @@ def main():
         # Real Odin logic edit -> fresh processes and same scenario/roles.
         movement = sandbox / "server/movement.odin"
         source = movement.read_text()
-        assert "180" in source
-        movement.write_text(source.replace("180", "120", 1))
+        assert "CHARACTER_SPEED :: f32(120)" in source
+        movement.write_text(source.replace("CHARACTER_SPEED :: f32(120)", "CHARACTER_SPEED :: f32(90)", 1))
         wait(lambda: session().get("pids") != initial["pids"], "Odin rebuild/relaunch")
         second = session()
         assert all(not alive(pid) for pid in initial["pids"])
         assert all(s["map"] == 2 and [c["definition"] for c in s["characters"]] == [3, 4] for s in statuses())
-        assert all(s["characters"][0]["y"] == spawn_y for s in statuses())
+        assert all(s["trainers"][0]["y"] == spawn_y for s in statuses())
 
         # Shared JSON changes are accepted by both content readers before restart.
         characters = sandbox / "client/content/data/characters.json"
@@ -164,6 +167,12 @@ def main():
         characters.write_text(json.dumps(data))
         wait(lambda: session().get("pids") != second["pids"], "shared data reload")
         assert len({s["fingerprint"] for s in statuses()}) == 1 and statuses()[0]["fingerprint"] != old_fingerprint
+        third = session()
+        # A nested pure-AI package edit must rebuild/relaunch with the same seed.
+        wander = sandbox / "server/ai/wander.odin"
+        wander.write_text(wander.read_text().replace("6, 64, 128", "6, 48, 128"))
+        wait(lambda: session().get("pids") != third["pids"], "nested AI source reload")
+        assert session()["scenario"]["seed"] == 42
         third = session()
         script = sandbox / "client/world/game_arena.gd"
         script.write_text(script.read_text().replace('"Arena sandbox"', '"Reloaded arena sandbox"'))

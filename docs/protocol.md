@@ -1,6 +1,6 @@
-# Arena protocol, version 6
+# Arena protocol, version 9
 
-Checkpoint **3I** adds a host-enforced audience delay to the existing Lobby → Selecting → Countdown → InArena flow. Version 6 extends Welcome with the configured delay; restart host and clients together after updating from version 5.
+Version 9 adds trainer idle/walk state, facing and state-start tick to the existing character locomotion records. Player1 now completes a planted first step before translation. Restart host and clients together after updating from version 8. The default five-second audience delay remains. See [Player1 walk timing](05b-player-walk-timing.md).
 
 ## Transport and header
 
@@ -13,7 +13,7 @@ One application message per packet. Multibyte integers are explicitly **unsigned
 | Offset | Field | Value |
 | --- | --- | --- |
 | 0–3 | Magic | ASCII `OGAA`, hex `4f 47 41 41` |
-| 4 | Version | `06` |
+| 4 | Version | `09` |
 | 5 | Kind | The message kind below |
 
 ## Messages
@@ -22,7 +22,7 @@ One application message per packet. Multibyte integers are explicitly **unsigned
 | --- | --- | --- | --- | --- |
 | 1 Hello | Client → host | Join preference `u8`, content fingerprint `32 bytes` | 39 | 0 |
 | 2 Welcome | Host → joining client | Assigned role `u8`, audience delay in milliseconds `u32` | 11 | 0 |
-| 3 SessionState | Host → joined clients | Full state, detailed below | 32 or 72 | 0 |
+| 3 SessionState | Host → joined clients | Full state, detailed below | 32 or 138 | 0 |
 | 4 StartSelection | Player → host | Expected round `u32` | 10 | 0 |
 | 5 SelectCharacter | Player → host | Expected round `u32`, character ID `u16` | 12 | 0 |
 | 6 SetReady | Player → host | Round `u32`, character ID `u16`, map ID `u16`, desired Ready `u8` | 15 | 0 |
@@ -30,11 +30,11 @@ One application message per packet. Multibyte integers are explicitly **unsigned
 | 8 CommandRejected | Host → sender | Sender-visible round `u32`, rejected kind `u8`, reason `u8` | 12 | 0 |
 | 9 SelectArena | Player → host | Expected round `u32`, map ID `u16` | 12 | 0 |
 | 10 Input | Player → host | Round `u32`, sequence `u32`, direction mask `u8` | 15 | 1 |
-| 11 WorldState | Host → joined clients | Round `u32`, server tick `u32`, count `u8`, two character records | 55 | 1 |
+| 11 WorldState | Host → joined clients | Round `u32`, server tick `u32`, character count `u8`, two gladiators, two trainers, summon ticks `u16`, four locomotion records | 121 | 1 |
 
 Boolean values must be exactly 0 or 1. Exact message lengths, header, channel, and enum values are validated.
 
-Hello preference 0 requests an available player slot, falling back to audience when both are occupied. Preference 1 requests audience even when player slots are free. Welcome role 0 means audience; 1 and 2 identify players. Character definition IDs are separate: 1 Circle, 2 Square, 3 Triangle, 4 Diamond. Runtime entity IDs identify individual spawns.
+Hello preference 0 requests an available player slot, falling back to audience when both are occupied. Preference 1 requests audience even when player slots are free. Welcome role 0 means audience; 1 and 2 identify players. Character definition IDs are separate: 1 Circle, 2 Square, 3 Triangle, 4 Diamond, 5 Archer, 6 Orc. Trainer definition ID 1 means Player1 in its separate definition namespace. Runtime entity IDs identify individual spawns and are unique across both families.
 
 Authority comes from the welcomed connection. Commands never contain a claimed owner or position. Duplicate Hello returns the same Welcome and the latest state allowed for that connection: live for players, historical for delayed audience (or no state while the buffer warms up). It never changes membership. Audience members must reconnect to claim a vacant player slot; there is no automatic promotion.
 
@@ -48,11 +48,11 @@ The active files, in hash order, are **`arenas.json`, `characters.json`, `terrai
 u32le(path byte length) + UTF-8 relative path + u32le(file byte length) + raw file bytes
 ```
 
-Visual assets and Godot metadata are excluded. JSON whitespace changes affect the fingerprint. Use identical data and restart both programs after content edits. The fingerprint checks compatibility; it is not authentication. Version 6 fixes movement speed at **180 world units/second** and simulation frequency at **60 Hz**; those rules are implemented in both languages and require a protocol update if changed incompatibly.
+Visual assets and Godot metadata are excluded. JSON whitespace changes affect the fingerprint. Use identical data and restart both programs after content edits. The fingerprint checks compatibility; it is not authentication. Version 9 fixes trainer movement speed at **120 world units/second** and simulation frequency at **60 Hz**; those rules are implemented in both languages and require a protocol update if changed incompatibly.
 
 The host checks the fingerprint before assigning membership. Mismatch disconnects with reason 2; the client shows **Update game content**. Invalid catalogs prevent startup or connection. Terrain IDs, rows, spawns, and footprint clearance are validated by both programs.
 
-The current arena catalog uses **schema 2**: each map includes matching `rows` and `elevation_rows`, whose digits encode levels 0–3. Both sides reject malformed height rows. Legacy schema-1 maps are flat and remain supported for fixtures; older readers reject schema 2. Terrain and character catalogs remain schema 1. This content-schema change does not alter the version-6 wire layouts below.
+The current arena catalog uses **schema 2**: each map includes matching `rows` and `elevation_rows`, whose digits encode levels 0–3. Both sides reject malformed height rows. Legacy schema-1 maps are flat and remain supported for fixtures; older readers reject schema 2. Terrain and character catalogs remain schema 1. This content-schema change does not alter the version-8 wire layouts below.
 
 ## SessionState layout
 
@@ -71,29 +71,48 @@ The current arena catalog uses **schema 2**: each map includes matching `rows` a
 | 26 | Countdown seconds | `u8`, 5…1 in Countdown, zero otherwise |
 | 27–30 | Server tick | `u32`, increases once per fixed simulation step |
 | 31 | World character count | `u8`, 2 in InArena, zero otherwise |
-| 32 onward | Character records | 20 bytes each, layout below |
+| 32, 52 | Gladiator records | 20 bytes each, layout below; InArena only |
+| 72, 92 | Trainer records | 20 bytes each; InArena only |
+| 112–113 | Summon elapsed ticks | `u16`, 0–90; InArena only |
+| 114, 120 | Gladiator locomotion records | 6 bytes each, same order as gladiator records; InArena only |
+| 126, 132 | Trainer locomotion records | 6 bytes each, same order as trainer records; InArena only |
 
 Welcome precedes the first full state on channel 0. Its delay field is at offset 7, unsigned little-endian milliseconds, range 0–60,000; fighters must receive zero. Players receive live full states when membership, phase, picks, readiness, or countdown change. Audience receives the same information from the host history after its configured delay (default 5,000 ms), sampled at up to 20 Hz. Late viewers receive the newest eligible historical state, never the current live countdown/positions. No state is sent during initial history warmup. See [audience delay](03i-audience-delay.md).
 
-Revision increases per lifecycle change; movement only advances server tick. Round increases on selection start, a different map, ReturnToLobby, or fighter departure. Audience changes preserve the round and live entities. Reconnecting clears client revision/tick history.
+Revision increases per lifecycle change; movement only advances server tick. Round increases on selection start, a different map, ReturnToLobby, or fighter departure. Audience changes preserve the round and live entities. Reconnecting clears client revision/tick history. Within one round, entity identities must stay stable and summon progress cannot decrease.
 
-Lobby has no picks, Ready flags, map, countdown, or characters. Other phases require both players and a known map. Ready requires a selected character. Countdown requires both Ready and no spawned entities. InArena requires both Ready and two unique entity IDs/owners, with definitions matching the selected characters. The client validates identities, catalog IDs, and position bounds before display.
+Lobby has no picks, Ready flags, map, countdown, or characters. Other phases require both players and a known map. Ready requires a selected character. Countdown requires both Ready and no spawned entities. InArena requires both Ready, two gladiators matching the selected characters, and two trainers using definition 1. Each family has owners 1 and 2, and all four entity IDs are unique. The client validates identities, catalog IDs, position bounds, and monotonic summon progress before display.
 
-## Character and WorldState layouts
+## Entity and WorldState layouts
 
-Every character record uses these offsets relative to its start:
+Every gladiator or trainer record uses these offsets relative to its start:
 
 | Offset | Field | Encoding |
 | --- | --- | --- |
 | 0–3 | Runtime entity ID | `u32`, nonzero, allocated anew for each spawn |
-| 4–5 | Character definition ID | `u16` |
+| 4–5 | Definition ID within the record’s family | `u16` |
 | 6 | Owner | `u8`, 1 or 2 |
 | 7–10 | X | `u32`, world units × 256, rounded |
 | 11–14 | Y | `u32`, world units × 256, rounded |
 | 15–18 | Acknowledged input sequence | `u32`, latest input used by a simulation step |
 | 19 | Direction mask | `u8`, current host input direction |
 
-WorldState has round at offset 6, server tick at 10, character count at 14 (always 2), and records at 15 and 35. The host sends full world state every third simulation tick, **20 Hz**. Snapshots carry no deltas, so one lost packet does not prevent decoding the next.
+WorldState has round at offset 6, server tick at 10, character count at 14 (always 2), gladiator records at 15 and 35, trainer records at 55 and 75, summon elapsed ticks at 95, and gladiator locomotion records at 97 and 103, and trainer locomotion records at 109 and 115. Gladiator input masks and acknowledgments must be zero. Trainer masks must be zero during summoning. Neither packet includes a separate trainer count: two trainers are required whenever two gladiators exist. The host sends full world state every third simulation tick, **20 Hz**. Snapshots carry no deltas, so one lost packet does not prevent decoding the next.
+
+Each six-byte locomotion record has:
+
+| Relative offset | Field | Encoding |
+| --- | --- | --- |
+| 0 | Locomotion | `u8`: 0 idle, 1 walk |
+| 1 | Facing | `u8`: 0 north, 1 north_east, 2 east, 3 south_east, 4 south, 5 south_west, 6 west, 7 north_west |
+| 2–5 | State start tick | `u32`; tick when locomotion last changed (spawn tick initially) |
+
+Locomotion describes actual movement, not requested intent. Idle preserves the last
+facing. A blocked move can cause a partial slide for its final tick, then idle.
+The client rejects unknown values, future state-start ticks (serial comparison),
+walking during summoning, or regressing state-start ticks within a stable entity.
+Elapsed animation time uses wrap-safe subtraction. Stable locomotion does not
+reset its start tick on each packet.
 
 Clients ignore older/equal world ticks, packets from other rounds, and world packets received outside InArena. Serial comparison handles `u32` wraparound. Reliable membership updates can arrive after newer world updates; the client keeps the newer positions while applying the updated membership/revision.
 
@@ -103,20 +122,46 @@ Clients ignore older/equal world ticks, packets from other rounds, and world pac
 - SelectCharacter requires Selecting and a valid ID. Mirrors are allowed. Changing a pick clears only that player's Ready.
 - SelectArena requires Selecting and a known map. Changing it clears both Ready flags and advances the round while preserving picks.
 - SetReady requires Selecting and matching round, character, and map. It sets an explicit boolean. Repeating an already satisfied choice/Ready while Selecting returns unchanged state.
-- The second Ready enters Countdown for **300 simulation ticks**. The host publishes 5 immediately to players, then 4, 3, 2, 1 at one-second intervals; delayed audience receives that countdown on its historical timeline. At zero it creates two characters at the map's spawn centers and enters InArena.
+- The second Ready enters Countdown for **300 simulation ticks**. The host publishes 5 immediately to players, then 4, 3, 2, 1 at one-second intervals; delayed audience receives that countdown on its historical timeline. At zero it creates two trainers at the map’s spawn centers, reserves two gladiators on nearby clear land, and enters InArena with summon elapsed ticks zero.
 - Selection/Ready changes and movement are rejected during Countdown. Neither client can choose a different spawn or end the countdown early.
 - ReturnToLobby is accepted from either fighter during Countdown or InArena. It clears picks, map, Ready, countdown, and entities while preserving connections.
 - A fighter departure resets the session to Lobby; audience sees this reset on its delayed timeline. Audience departure only changes the count.
+
+## Summoning
+
+The host increments summon elapsed ticks once per simulation step, saturating at **90** (1.5 seconds). Trainer input is suppressed throughout those steps; normal movement starts on the following step. Gladiator positions and IDs are present from arena entry but the client hides them before tick **36**. Trainers play the existing `advise` gesture; a procedural orb travels toward each summon location. From tick 36 a ring/particle effect and scale/opacity fade reveal the selected gladiator. Materialization reaches full size at tick 60; the gesture/effect ends at tick 90.
+
+The client interpolates only between received summon values, freezes on a paused feed, and snaps to completion at 90. Audience history includes both entity families and this clock. A late viewer receiving a completed summon displays the resulting entities without replaying it. Reset/departure clears all views and effects; there are no delayed spawn callbacks. See [trainer and summon checkpoint](05a-trainers-and-summoning.md).
 
 ## Input, simulation, and presentation
 
 Input offsets are round at 6, sequence at 10, and mask at 14. Direction bits are **Left=1, Right=2, Up=4, Down=8**; zero stops. Opposites cancel and diagonals are normalized. Bits outside 0–15 are malformed.
 
-The client sends input every physics tick (60 Hz), including zero-mask heartbeats. The host retains only newer sequences for that connection's character; duplicates/older inputs are ignored without a reliable reply. Input cannot advance simulation. The host moves characters only at fixed steps, stops input after **15 steps without a newer heartbeat** (250 ms), and never accepts client coordinates. Packet bursts cannot increase movement speed. Initial input sequence is zero; the first normal sample is one.
+The client sends input every physics tick (60 Hz), including zero-mask heartbeats. The host retains only newer sequences for that connection's trainer; duplicates/older inputs are ignored without a reliable reply. Input cannot advance simulation. The host moves trainers only at fixed steps, stops input after **15 steps without a newer heartbeat** (250 ms), and never accepts client coordinates. Packet bursts cannot increase movement speed. Initial input sequence is zero; the first normal sample is one.
 
-Movement uses the selected character's circular footprint against blocked terrain and boundaries. X then Y collision resolution permits wall sliding. Grass, ground, sand, tall grass, and stairs are walkable; water, stone, forest, cliffs, and buildings block movement. A movement step between different elevation levels is allowed only when the difference is one and either endpoint cell is stairs. Host simulation and client prediction apply the same rule. Terrain bonuses and character-to-character collision are deferred.
+Trainer movement uses a **9.6-world-unit radius** circular footprint against blocked terrain and boundaries. X then Y collision resolution permits wall sliding. Grass, ground, sand, tall grass, and stairs are walkable; water, stone, forest, cliffs, and buildings block movement. A movement step between different elevation levels is allowed only when the difference is one and either endpoint cell is stairs. Host simulation and client prediction apply the same rule. Terrain bonuses and character-to-character collision are deferred.
 
-The owner predicts movement locally, then reconciles from authoritative positions and acknowledged input sequences, replaying pending samples. Small visual corrections decay smoothly; corrections over 64 units snap. Prediction history is capped at 120 samples, and missing world updates suspend prediction after 500 ms. Remote characters interpolate over the 50 ms snapshot interval. Focus loss clears held keys. This provides immediate local response; Internet latency and packet-loss performance still require measurement.
+The owner immediately predicts the walk action. Translation begins after 8 preparation ticks (133 ms); Player1 renders its first two walk poses in 33 ms each, then resumes normal clip timing. Releasing input, opposing keys, blocked terrain or an input timeout cancels preparation. Reconciliation copies authoritative position, locomotion, facing and state-start tick, then replays unacknowledged inputs through the same fixed-step motion rule. Small visual corrections decay smoothly; corrections over 64 units snap. Prediction history is capped at 120 samples, and missing world updates suspend prediction after 500 ms. Remote trainers use `CharacterMotionPresenter` and the received action clock, including preparation and stop boundaries. The player camera follows their trainer. Autonomous characters interpolate received positions and sample public locomotion/facing/state age. All clients treat them as remote; trainer input prediction never drives them. A stalled feed freezes at its last received character sample. Gaps over 30 ticks snap to the received state. Focus loss clears held keys. This provides immediate local response; Internet latency and packet-loss performance still require measurement.
+
+## Autonomous character authority
+
+The Odin `Simulation` owns private `Battle_Runtime` beside the public `Session`.
+The host's default `idle_wander` controller begins after summoning, proposes Hold
+or Move, and shared action/collision rules produce the public fields. Current
+movement speed is 64 world units/second within a 128-unit radius of each summon
+position. Settings are host-owned: clients do not predict AI or consume its RNG.
+No AI command packet is accepted from fighters or audience.
+
+`walk` begins with 12 ticks of stationary first-step preparation. Its state-start
+tick includes that preparation; the first displacement is at start + 12. A legal
+collision-resolved direction supplies the facing before translation. Godot uses
+the same timing to keep interpolation out of preparation and finish translation
+before an idle transition. This uses the existing character fields and host history.
+
+Audience history copies public session values only, including these locomotion
+records. It contains no agent pointers, private cognitive memory or random state.
+The same delayed session/world encoders carry character position and action, so
+no live AI side channel can bypass audience delay. See [checkpoint 6A](06b-autonomous-idle-walk.md).
 
 ## Rejections, limits, and disconnection
 
@@ -135,7 +180,7 @@ Well-formed commands that violate session rules receive CommandRejected and rema
 
 Malformed messages disconnect with reason **1**; content mismatch uses **2**. Membership is released exactly once. Host loss clears local identity, session, camera, and characters and returns the client to Lobby.
 
-The host supports **4,095 total connections**, matching [ENet 1.3.17's peer limit](https://github.com/lsalzman/enet/blob/v1.3.17/include/enet/protocol.h). With two fighters, up to 4,093 slots are available for audience. This is a transport ceiling, not a measured viewer capacity. Hello/Welcome timeout is five seconds. ENet timeout factor is 32, minimum 1500 ms, maximum 5000 ms. Host packet cap is **128 bytes**, queued incoming data cap **4096 bytes per peer**.
+The host supports **4,095 total connections**, matching [ENet 1.3.17's peer limit](https://github.com/lsalzman/enet/blob/v1.3.17/include/enet/protocol.h). With two fighters, up to 4,093 slots are available for audience. This is a transport ceiling, not a measured viewer capacity. Hello/Welcome timeout is five seconds. ENet timeout factor is 32, minimum 1500 ms, maximum 5000 ms. Host packet cap is **160 bytes**, queued incoming data cap **4096 bytes per peer**.
 
 Implementations: [Odin codec](../server/protocol.odin), [session rules](../server/session.odin), [movement](../server/movement.odin), [Godot codec](../client/network/protocol.gd), [connection](../client/network/game_connection.gd), and [arena presentation](../client/world/game_arena.gd). `make check` covers the content, session, connection, selection, countdown, movement, and camera checks.
 

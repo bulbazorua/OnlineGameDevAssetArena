@@ -1,11 +1,15 @@
 class_name GameArena
 extends Node2D
 
+const CharacterMotionPresenter = preload("res://characters/character_motion_presenter.gd")
 const GameContent = preload("res://content/game_content.gd")
 const GameConnection = preload("res://network/game_connection.gd")
 const GameProtocol = preload("res://network/protocol.gd")
 const SessionSnapshot = preload("res://session/session_snapshot.gd")
 const CharacterView = preload("res://characters/character_view.gd")
+const PlayerView = preload("res://players/player_view.gd")
+const TrainerMovement = preload("res://players/trainer_movement.gd")
+const SummonEffect = preload("res://world/summon_effect.gd")
 const CharacterMovement = preload("res://world/character_movement.gd")
 const ArenaWorld = preload("res://world/arena_world.gd")
 const INTERPOLATION_SECONDS := 0.05
@@ -25,14 +29,21 @@ var content: GameContent
 var network: GameConnection
 var snapshot: SessionSnapshot
 var character_views: Dictionary = {}
+var character_presenters: Dictionary = {}
+var trainer_views: Dictionary = {}
+var trainer_presenters: Dictionary = {}
+var summon_effects: Dictionary = {}
+var _summon_from := 0.0
+var _summon_display_tick := 0.0
 var predicted_position := Vector2.ZERO
 var _local_entity := 0
 var _sequence := 0
 var _pending: Array[Vector2i] = []
 var _pressed_keys: Dictionary = {}
 var _correction := Vector2.ZERO
-var _remote_from: Dictionary = {}
-var _remote_target: Dictionary = {}
+var _predicted_trainer: SessionSnapshot.TrainerState
+var _predicted_tick := 0
+var _local_motion_elapsed := 0.0
 var _interpolation_time := 0.0
 var _last_tick := -1
 var _last_world_ms := 0
@@ -82,7 +93,7 @@ func display_session(state: SessionSnapshot) -> void:
 	title_label.text = "%s  ·  %s  ·  %d watching" % [world.definition.display_name, role, state.audience_count]
 	return_button.visible = network.player_id != 0
 	%AudienceControls.visible = network.player_id == 0
-	controls_label.text = "Wheel / + −: zoom · Right / middle drag or WASD: pan · 0: reset · 1 / 2: follow" if network.player_id == 0 else "WASD / Arrows to move · Your character stays centered"
+	controls_label.text = "Wheel / + −: zoom · Right / middle drag or WASD: pan · 0: reset · 1 / 2: follow" if network.player_id == 0 else "WASD / Arrows: move your trainer · Characters roam independently"
 	var names: Array[String] = []
 	for index in 2:
 		names.append("P%d · %s" % [index + 1, content.by_id[state.players[index].character_id].display_name])
@@ -106,76 +117,101 @@ func apply_world(state: SessionSnapshot) -> void:
 	_last_tick = state.server_tick
 	_last_world_ms = Time.get_ticks_msec()
 	_interpolation_time = 0.0
+	_summon_from = _summon_display_tick if not trainer_views.is_empty() else float(state.summon_elapsed_ticks)
 	for character in state.characters:
-		var fresh := not character_views.has(character.entity_id)
-		var view: CharacterView
+		if not character_views.has(character.entity_id):
+			var gladiator := CharacterView.new()
+			content.configure_character(gladiator, character.definition_id, character.owner_id, content.by_id[character.definition_id].footprint_radius)
+			gladiator.animator.facing = "east" if character.owner_id == 1 else "west"
+			gladiator.observe_motion(Vector2.ZERO)
+			gladiator.set_debug_actions(debug_actions)
+			gladiator.position = character.position
+			$Characters.add_child(gladiator)
+			character_views[character.entity_id] = gladiator
+			character_presenters[character.entity_id] = CharacterMotionPresenter.new(gladiator)
+			var effect := SummonEffect.new()
+			$Characters.add_child(effect)
+			summon_effects[character.entity_id] = effect
+		character_presenters[character.entity_id].push(character, state.server_tick)
+	for character in state.trainers:
+		var fresh := not trainer_views.has(character.entity_id)
+		var view: PlayerView
 		if fresh:
-			view = CharacterView.new()
+			view = PlayerView.new()
 			view.is_local = character.owner_id == network.player_id
-			content.configure_character(view, character.definition_id, character.owner_id, content.by_id[character.definition_id].footprint_radius)
+			content.player_content.configure_view(view, character.definition_id, character.owner_id)
 			view.set_debug_actions(debug_actions)
 			view.position = character.position
 			$Characters.add_child(view)
-			character_views[character.entity_id] = view
+			trainer_views[character.entity_id] = view
+			if character.owner_id != network.player_id:
+				trainer_presenters[character.entity_id] = CharacterMotionPresenter.new(view, GameProtocol.TRAINER_WALK_START_TICKS)
 		else:
-			view = character_views[character.entity_id]
+			view = trainer_views[character.entity_id]
 		if character.owner_id == network.player_id:
 			_local_entity = character.entity_id
 			_last_local_position = character.position
 			var old_visible := view.position
-			predicted_position = character.position
+			_predicted_trainer = TrainerMovement.copy_state(character)
+			_predicted_tick = state.server_tick
+			_local_motion_elapsed = 0.0
 			while not _pending.is_empty() and not GameProtocol.serial_is_newer(_pending[0].x, character.applied_input_sequence):
 				_pending.pop_front()
 			for sample in _pending:
-				predicted_position = CharacterMovement.move(predicted_position, sample.y, view.radius, world.definition, content.arena_catalog)
+				_predicted_tick = (_predicted_tick + 1) & 0xffffffff
+				TrainerMovement.step(_predicted_trainer, sample.y, _predicted_tick, world.definition, content.arena_catalog)
+			predicted_position = _predicted_trainer.position
 			_correction = old_visible - predicted_position
 			if fresh or _correction.length() > 64:
 				_correction = Vector2.ZERO
 			view.position = predicted_position + _correction
 		else:
-			var previous: Vector2 = _remote_target.get(character.entity_id, character.position)
-			var movement := character.position - previous
-			if fresh:
-				movement = CharacterMovement.move(character.position, character.input_mask, view.radius, world.definition, content.arena_catalog) - character.position
-			view.observe_motion(movement)
-			_remote_from[character.entity_id] = view.position
-			_remote_target[character.entity_id] = character.position
+			trainer_presenters[character.entity_id].push(character, state.server_tick)
 
+	_present_summon(0.0)
 
 func _physics_process(_delta: float) -> void:
 	if not visible or snapshot == null or snapshot.phase != SessionSnapshot.Phase.IN_ARENA or network.player_id == 0 or _local_entity == 0:
 		return
 	_sequence = (_sequence + 1) & 0xffffffff
-	var mask := input_mask()
+	var summoning: bool = snapshot.summon_elapsed_ticks < GameProtocol.SUMMON_DURATION_TICKS
+	var mask := 0 if summoning else input_mask()
 	network.send_input(_sequence, mask)
 	# A disconnect signal may synchronously clear this world during send.
 	if _local_entity == 0:
+		return
+	if summoning:
+		_pending.clear()
 		return
 	if Time.get_ticks_msec() - _last_world_ms > STALE_WORLD_MS or _pending.size() >= MAX_PENDING_INPUTS:
 		_pending.clear()
 		predicted_position = _last_local_position
 		_correction = Vector2.ZERO
-		character_views[_local_entity].observe_motion(Vector2.ZERO)
+		_predicted_trainer.position = predicted_position
+		_predicted_trainer.locomotion = 0
+		_local_motion_elapsed = 0.0
 		return
 	_pending.append(Vector2i(_sequence, mask))
-	var view: CharacterView = character_views[_local_entity]
-	var previous := predicted_position
-	predicted_position = CharacterMovement.move(predicted_position, mask, view.radius, world.definition, content.arena_catalog)
-	view.observe_motion(predicted_position - previous)
+	_predicted_tick = (_predicted_tick + 1) & 0xffffffff
+	TrainerMovement.step(_predicted_trainer, mask, _predicted_tick, world.definition, content.arena_catalog)
+	predicted_position = _predicted_trainer.position
+	_local_motion_elapsed = 0.0
 
 
 func _process(delta: float) -> void:
 	if not visible:
 		return
+	for presenter in character_presenters.values(): presenter.advance(delta)
+	for presenter in trainer_presenters.values(): presenter.advance(delta)
 	_interpolation_time += delta
 	var weight := minf(_interpolation_time / INTERPOLATION_SECONDS, 1.0)
-	for id: int in _remote_target:
-		character_views[id].position = _remote_from[id].lerp(_remote_target[id], weight)
-		if Time.get_ticks_msec() - _last_world_ms > STALE_WORLD_MS:
-			character_views[id].observe_motion(Vector2.ZERO)
 	if _local_entity != 0:
 		_correction *= exp(-20.0 * delta)
-		character_views[_local_entity].position = predicted_position + _correction
+		trainer_views[_local_entity].position = predicted_position + _correction
+		_local_motion_elapsed = minf(_local_motion_elapsed + delta, CharacterMovement.STEP)
+		var age := float((_predicted_tick - _predicted_trainer.state_start_tick) & 0xffffffff) / 60.0 + _local_motion_elapsed
+		trainer_views[_local_entity].present_locomotion(GameProtocol.LOCOMOTION_NAMES[_predicted_trainer.locomotion], GameProtocol.FACING_NAMES[_predicted_trainer.facing], age)
+	_present_summon(weight)
 	_update_camera(delta)
 
 
@@ -243,22 +279,49 @@ func _update_camera(delta := 0.0) -> void:
 	if camera_owner > 0:
 		target = world.definition.cell_center(world.definition.spawns[camera_owner - 1])
 		if snapshot != null:
-			for character in snapshot.characters:
-				if character.owner_id == camera_owner and character_views.has(character.entity_id):
-					target = character_views[character.entity_id].position
+			for character in snapshot.trainers:
+				if character.owner_id == camera_owner and trainer_views.has(character.entity_id):
+					target = trainer_views[character.entity_id].position
 	camera.update_view(target, delta)
 
 
 func _clear_characters() -> void:
 	camera.reset_input()
-	for view: CharacterView in character_views.values():
+	for view in character_views.values() + trainer_views.values() + summon_effects.values():
 		view.queue_free()
 	character_views.clear()
-	_remote_from.clear()
-	_remote_target.clear()
+	character_presenters.clear()
+	trainer_views.clear()
+	trainer_presenters.clear()
+	summon_effects.clear()
+	_summon_from = 0.0
+	_summon_display_tick = 0.0
+	_predicted_trainer = null
+	_predicted_tick = 0
+	_local_motion_elapsed = 0.0
 	_pressed_keys.clear()
 	_pending.clear()
 	_local_entity = 0
 	_sequence = 0
 	_last_tick = -1
 	_correction = Vector2.ZERO
+
+
+func _present_summon(weight: float) -> void:
+	if snapshot == null or snapshot.phase != SessionSnapshot.Phase.IN_ARENA: return
+	_summon_display_tick = float(GameProtocol.SUMMON_DURATION_TICKS) if snapshot.summon_elapsed_ticks == GameProtocol.SUMMON_DURATION_TICKS else lerpf(_summon_from, float(snapshot.summon_elapsed_ticks), weight)
+	var summoning := snapshot.summon_elapsed_ticks < GameProtocol.SUMMON_DURATION_TICKS
+	phase_label.text = "Summoning gladiators…" if summoning else "Arena sandbox"
+	if network.player_id == 0: phase_label.text += " · " + network.audience_timeline_label()
+	for character in snapshot.characters:
+		var view: CharacterView = character_views[character.entity_id]
+		var trainer_state = snapshot.trainers.filter(func(trainer): return trainer.owner_id == character.owner_id)[0]
+		var trainer: PlayerView = trainer_views[trainer_state.entity_id]
+		if summoning:
+			var facing := "east" if character.position.x >= trainer.position.x else "west"
+			trainer.present_summon(_summon_display_tick / 60.0, facing)
+		var reveal := clampf((_summon_display_tick - GameProtocol.SUMMON_REVEAL_TICKS) / 24.0, 0.0, 1.0)
+		view.visible = _summon_display_tick >= GameProtocol.SUMMON_REVEAL_TICKS
+		view.modulate = Color(1, 1, 1, reveal)
+		view.scale = Vector2.ONE * lerpf(0.2, 1.0, ease(reveal, 0.5))
+		summon_effects[character.entity_id].present(trainer.position, character.position, character.owner_id, _summon_display_tick)

@@ -21,6 +21,8 @@ Session :: struct {
     server_tick: u32,
     next_entity_id: u32,
     characters: [MAX_PLAYERS]Character,
+    trainers: [MAX_PLAYERS]Trainer,
+    summon_elapsed_ticks: u16,
     character_count: u8,
 }
 
@@ -30,6 +32,8 @@ session_reset :: proc(session: ^Session) {
     session.round_id += 1
     session.countdown_ticks = 0
     session.characters = {}
+    session.trainers = {}
+    session.summon_elapsed_ticks = 0
     session.character_count = 0
     for &player in session.players {
         player.character_id = 0
@@ -79,10 +83,10 @@ session_apply :: proc(session: ^Session, content: ^Game_Content, player_id: u8, 
     if command.round_id != session.round_id { return false, .Stale_Round }
     if command.kind == .Input {
         if session.phase != .In_Arena { return false, .Wrong_Phase }
-        character := &session.characters[player_id - 1]
+        character := &session.trainers[player_id - 1]
         if serial_is_newer(command.input_sequence, character.pending_input_sequence) {
             character.pending_input_sequence = command.input_sequence
-            character.input_mask = command.input_mask
+            character.input_mask = command.input_mask if session.summon_elapsed_ticks == SUMMON_DURATION_TICKS else 0
             character.input_age_ticks = 0
         }
         return false, .None

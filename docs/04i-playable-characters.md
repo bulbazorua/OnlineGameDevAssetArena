@@ -1,5 +1,7 @@
 # Checkpoint 4C: selectable characters and movement animation
 
+**Current follow-up:** [checkpoint 6A](06b-autonomous-idle-walk.md) adds autonomous idle/walk after summoning and upgrades transport to v8. The descriptions below record this earlier checkpoint.
+
 Archer and Orc now appear in normal character selection and spawn as animated characters in the arena. Their IDs are **5** and **6**. Circle, Square, Triangle and Diamond retain IDs 1–4. Selection cards and both player previews use the same processed art as the arena.
 
 This checkpoint follows the user's request to make complete animation modules selectable now. It supersedes the earlier proposal to keep movement integration confined to the harness until combat admission. The current sandbox validates all five animation roles before loading these characters; health, damage, authoritative combat states, projectiles and AI remain subsequent work. The art harness's `selection_eligible: false` still means that a full Basic Combat admission certificate has not been earned. It is not the movement sandbox's roster switch.

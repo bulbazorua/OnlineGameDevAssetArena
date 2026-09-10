@@ -9,7 +9,7 @@ class WireObserver extends GameConnection:
 		var entry := {"at": Time.get_ticks_msec(), "kind": message.kind, "round": message.round_id}
 		if message.session != null:
 			entry.merge({"round": message.session.round_id, "phase": message.session.phase,
-				"positions": message.session.characters.map(func(character): return character.position),
+				"positions": message.session.trainers.map(func(character): return character.position),
 				"countdown": message.session.countdown_seconds,
 				"picks": message.session.players.map(func(player): return player.character_id)}, true)
 		received.append(entry)
@@ -60,13 +60,14 @@ func _check() -> String:
 	if audience.network.session != null or wire.session != null or overflow.session != null: return "Early selection state leaked during buffer warmup."
 	if not await _wait_for(func(): return first.network.session.phase == SessionSnapshot.Phase.IN_ARENA): return "Fighters did not spawn after countdown."
 	if audience.network.session == null or audience.network.session.phase == SessionSnapshot.Phase.IN_ARENA: return "Spectator countdown did not follow its delayed timeline."
-	var spawn: Vector2 = first.network.session.characters[0].position
+	if not await _wait_for(func(): return first.network.session.summon_elapsed_ticks == 90): return "Trainer summon lock did not finish."
+	var spawn: Vector2 = first.network.session.trainers[0].position
 	var move_at := Time.get_ticks_msec()
 	_key(first, KEY_D, true)
-	await create_timer(0.3).timeout
+	await create_timer(0.65).timeout
 	_key(first, KEY_D, false)
 	await create_timer(0.15).timeout
-	if first.network.session.characters[0].position.x <= spawn.x + 20: return "Live fighter movement was delayed."
+	if first.network.session.trainers[0].position.x <= spawn.x + 20: return "Live fighter movement was delayed."
 	var late := _observer(first.content)
 	if not await _wait_for(func(): return late.session != null): return "Late audience did not get mature history."
 	if late.session.phase == SessionSnapshot.Phase.IN_ARENA: return "Late join leaked the live arena."
@@ -76,7 +77,7 @@ func _check() -> String:
 	audience.game_arena.camera.zoom_by(1)
 	if audience.game_arena.camera.zoom == before_zoom: return "Spectator delay blocked local camera controls."
 	if not audience.game_arena.phase_label.text.contains("5 s"): return "Arena HUD omitted the delay label."
-	if not await _wait_for(func(): return wire.session.phase == SessionSnapshot.Phase.IN_ARENA and wire.session.characters[0].position.x > spawn.x + 20): return "Delayed movement never arrived."
+	if not await _wait_for(func(): return wire.session.phase == SessionSnapshot.Phase.IN_ARENA and wire.session.trainers[0].position.x > spawn.x + 20): return "Delayed movement never arrived."
 	await create_timer(0.15).timeout
 	for observer in [wire, overflow, late]:
 		var saw_movement := false
