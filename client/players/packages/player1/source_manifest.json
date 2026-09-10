@@ -1,0 +1,28 @@
+{
+  "schema_version": 1,
+  "module_key": "player1",
+  "raw_root": "client/assets/Characters/Player1",
+  "files": {
+    "player_advice.png": "75186e7ed30915a84df0d505698f51a06a4aa65219f1c4b28d5fd7c0a17bc2c8",
+    "player_cheer.png": "767e0708aed0da481f3804b7ff79bfa5665ccae3e40f71db44150551081c1738",
+    "player_disappointed.png": "65a9d8e794abe74ed10c8ef06f6ef1d05a3b18c4e56054ae83855730f7ab71c9",
+    "player_hurt.png": "1cee640925b363e1ab6a81929f37a040a2822d106d6fc10cee5485bff587b1e9",
+    "player_idle.png": "69669c7d785833b70c38dca6a37a8aa0cf961fa4a72ca1d67b66f63343e57612",
+    "player_run.png": "da6f1bfb58b945e37c5fdc7658bb7ccc7e1a67674f9a56b3f091be7c604b9494",
+    "player_surprised.png": "139e56aefb9323835bb3c7d8739cd8213a2169614ff1a495cb14cc34d730d5f5",
+    "player_walk.png": "3d51e3ed73e3090b196a48c198d4154aa58d8268054ddb423478ed1cd7554295"
+  },
+  "provenance": {
+    "origin": "User-supplied Player1 animation sheets",
+    "added_on": "2026-09-10",
+    "revisions": [
+      {
+        "file": "player_walk.png",
+        "replaced_on": "2026-09-10",
+        "previous_sha256": "c4520ecda13fde4e7023e27c8ce9a3905ddeb5dc4d2e2c84398ed0a025aff115",
+        "sha256": "3d51e3ed73e3090b196a48c198d4154aa58d8268054ddb423478ed1cd7554295",
+        "note": "User replaced the six-pose walk sheet with an eight-pose walk cycle; crops and ground anchors recalibrated."
+      }
+    ]
+  }
+}

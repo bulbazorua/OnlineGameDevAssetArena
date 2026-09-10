@@ -22,6 +22,10 @@ SHARED = (
     "client/dev/process_character_assets.gd", "tools/process_character_assets.py",
 )
 BOOTSTRAP = 'config_version=5\n[rendering]\nrenderer/rendering_method="gl_compatibility"\n'
+CONTRACTS = {
+    "characters": "res://content/contracts/character_basic_combat/1.0.0-draft.1.json",
+    "players": "res://content/contracts/player_trainer/1.0.0-draft.1.json",
+}
 
 
 def sha(path: Path) -> str:
@@ -68,28 +72,31 @@ class ProcessingError(Exception):
         self.stage, self.source = stage, source
 
 
-def process(module_uri: str, godot: str, timeout: float = 60) -> dict:
+def process(module_uri: str, godot: str, timeout: float = 60, *, family: str = "characters") -> dict:
+    if family not in CONTRACTS:
+        raise ValueError("Unknown asset family: " + family)
     if not module_uri.startswith("res://"):
         raise ValueError("MODULE must be a local res:// module directory")
     module = local_path(ROOT / "client", module_uri.removeprefix("res://"))
     key = module.name
     if not re.fullmatch(r"[a-z][a-z0-9_]*", key):
         raise ValueError("Module directory must use a lowercase character key")
-    processed = ROOT / "build/processed/characters" / key
+    processed = ROOT / "build/processed" / family / key
     processed.mkdir(parents=True, exist_ok=True)
     with (processed / ".lock").open("w") as lock:
         fcntl.flock(lock, fcntl.LOCK_EX)
-        return _attempt(module_uri, module, key, processed, godot, timeout)
+        return _attempt(module_uri, module, key, processed, godot, timeout, family)
 
 
-def _attempt(module_uri, module, key, processed, godot, timeout):
+def _attempt(module_uri, module, key, processed, godot, timeout, family):
     now = datetime.now(timezone.utc)
     attempt = now.strftime("%Y%m%dT%H%M%S") + "-" + uuid.uuid4().hex[:12]
-    job = ROOT / "build/asset-jobs" / key / attempt
+    jobs = ROOT / "build/asset-jobs"
+    job = (jobs if family == "characters" else jobs / family) / key / attempt
     job.mkdir(parents=True)
     trace = job / "trace.jsonl"
     report_path = job / "report.json"
-    report = {"schema_version": 1, "module": key, "attempt": attempt, "status": "running",
+    report = {"schema_version": 1, "family": family, "module": key, "attempt": attempt, "status": "running",
               "stage": "inventory", "scope": "art_processing_only", "selection_eligible": False,
               "started_at": now.isoformat(), "report": str(report_path), "trace": str(trace),
               "godot_log": str(job / "godot.log"), "staged_artifact": str(job / "stage/artifact.json")}
@@ -147,7 +154,8 @@ def _attempt(module_uri, module, key, processed, godot, timeout):
         if hashes[manifest_path.relative_to(ROOT).as_posix()] != manifest_hash:
             raise ProcessingError("inventory", "Source inventory changed during snapshot", str(manifest_path))
         version = subprocess.check_output([godot, "--version"], text=True, timeout=10).strip()
-        inputs = {"module": module_uri, "files": hashes, "godot": version, "worker_project": BOOTSTRAP}
+        inputs = {"module": module_uri, "family": family, "contract_path": CONTRACTS[family],
+                  "files": hashes, "godot": version, "worker_project": BOOTSTRAP}
         input_digest = hashlib.sha256(json.dumps(inputs, sort_keys=True).encode()).hexdigest()
         report["input_digest"] = input_digest
         write_json(job / "inputs.json", inputs)
@@ -155,7 +163,7 @@ def _attempt(module_uri, module, key, processed, godot, timeout):
         (worker / "project.godot").write_text(BOOTSTRAP)
         output = job / "stage"
         output.mkdir()
-        request = {"module": module_uri, "raw_snapshot": str(job / "raw"), "output": str(output),
+        request = {"module": module_uri, "contract_path": CONTRACTS[family], "raw_snapshot": str(job / "raw"), "output": str(output),
                    "trace": str(trace), "result": str(job / "worker_result.json"), "input_digest": input_digest}
         write_json(job / "request.json", request)
         run([godot, "--headless", "--path", str(worker), "--editor", "--import"], job / "import.log", "import_scripts")
@@ -233,21 +241,26 @@ def main():
     selection = parser.add_mutually_exclusive_group()
     selection.add_argument("--module")
     selection.add_argument("--character")
+    selection.add_argument("--player")
+    parser.add_argument("--family", choices=CONTRACTS, default=None, help="Required for a custom player --module: players")
     parser.add_argument("--godot", default="godot")
     parser.add_argument("--timeout", type=float, default=60)
     parser.add_argument("--open-harness", action="store_true")
     parser.add_argument("--candidate", action="store_true", help="Open the latest staged candidate instead of the last successful generation")
     args = parser.parse_args()
     try:
+        family = args.family or ("players" if args.player is not None else "characters")
+        if (args.player is not None and family != "players") or (args.character is not None and family != "characters"):
+            raise ValueError("Selection key and asset family disagree")
         if args.module is None:
-            registry = json.loads((ROOT / "client/characters/packages/registry.json").read_text())
-            key = args.character or "reference16"
+            registry = json.loads((ROOT / "client" / family / "packages/registry.json").read_text())
+            key = (args.player or "player1") if family == "players" else (args.character or "reference16")
             entries = [entry for entry in registry["modules"] if entry["key"] == key]
             if len(entries) != 1:
-                raise ValueError("Unknown or duplicated character key: " + key)
+                raise ValueError("Unknown or duplicated asset key: " + key)
             args.module = entries[0]["module"]
         args.module = args.module.rstrip("/")
-        result = process(args.module, args.godot, args.timeout)
+        result = process(args.module, args.godot, args.timeout, family=family)
     except (OSError, ValueError, KeyError, TypeError) as error:
         parser.error(str(error))
     print(f"{result['status'].upper()}: {result['module']} at {result['stage']}")
@@ -255,8 +268,9 @@ def main():
     print("Report:", result["report"])
     if result.get("artifact"): print("Processed:", result["artifact"])
     if args.open_harness:
-        command = [args.godot, "--path", str(ROOT / "client"), "res://dev/character_harness.tscn", "--", "--module=" + args.module]
-        current = ROOT / "build/processed/characters" / result["module"] / "current.json"
+        scene = "player_harness" if family == "players" else "character_harness"
+        command = [args.godot, "--path", str(ROOT / "client"), "res://dev/" + scene + ".tscn", "--", "--module=" + args.module]
+        current = ROOT / "build/processed" / family / result["module"] / "current.json"
         if not args.candidate and not current.exists() and result.get("candidate_digest"):
             args.candidate = True
             print("No successful generation; previewing the latest processed candidate with its validation failures.", flush=True)

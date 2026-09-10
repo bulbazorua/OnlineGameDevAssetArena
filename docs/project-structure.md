@@ -1,6 +1,6 @@
 # Project structure: one repository, two programs
 
-Status: [Checkpoint 4C: selectable characters](04i-playable-characters.md) adds Archer/Orc to selection and the arena with processed runtime art, idle/walk playback and development action labels. [Checkpoint 3J: Tiny Swords Village](03j-tiny-swords-village.md) remains the latest map checkpoint. Shared combat follows later. [Phase 1: Host connection](01-host-connection.md) covers build requirements.
+Status: [Player1 trainer harness](05-player-harness.md) adds a separate eight-state player art contract, importer, registry and preview scene. [Checkpoint 4C: selectable characters](04i-playable-characters.md) adds Archer/Orc to selection and the arena with processed runtime art, idle/walk playback and development action labels. [Checkpoint 3J: Tiny Swords Village](03j-tiny-swords-village.md) remains the latest map checkpoint. Shared combat follows later. [Phase 1: Host connection](01-host-connection.md) covers build requirements.
 
 [Checkpoint 4A.1](04g-character-asset-processing.md) adds original fixture PNGs under `asset_sources/`, immutable processing attempts under `build/asset-jobs/`, and saved artifacts under `build/processed/characters/`. The harness consumes processed artifacts; source interpretation runs in a separate processing worker.
 
@@ -32,6 +32,7 @@ OnlineGameDevAssetArena/
 │   ├── dev/
 │   │   ├── reload_controller.gd    Local visual reload and launcher acknowledgments
 │   │   ├── character_harness.gd / .tscn  Isolated art workbench and diagnostics
+│   │   ├── player_harness.gd / .tscn  Trainer workbench with all eight required states
 │   │   ├── character_harness_stage.gd   Fixed grid and body/feet overlays
 │   │   ├── process_character_assets.gd  Isolated artifact-processing worker
 │   │   ├── fixtures/characters/{reference16,reference32}/  Independent importer/exporter fixtures
@@ -50,6 +51,7 @@ OnlineGameDevAssetArena/
 │   │   ├── arena_presentation.gd   ArenaPresentation: validate theme and grounded props
 │   │   ├── character_contract.gd   Draft export/role validation; no admission certification
 │   │   ├── contracts/character_basic_combat/1.0.0-draft.1.json
+│   │   ├── contracts/player_trainer/1.0.0-draft.1.json
 │   │   ├── presentation/arenas/    Client-only Tiny Swords theme and building measurements
 │   │   └── data/                   characters.json, terrains.json, arenas.json
 │   ├── presentation/
@@ -62,6 +64,9 @@ OnlineGameDevAssetArena/
 │   │   ├── tiny_swords_tileset.gd  64px terrain theme and cliff/shore adjacency
 │   │   └── terrain_tileset.gd      Terrain-to-atlas mapping and custom tile data
 │   ├── assets/                     Ninja Adventure/Kenney plus locally imported Tiny Swords
+│   ├── players/packages/
+│   │   ├── registry.json           Separate trainer workbench choices
+│   │   └── player1/                Private importer/exporter, calibration and source inventory
 │   ├── characters/
 │   │   ├── character_animator.gd   Per-instance motion action, facing and clip clock
 │   │   ├── character_visual.gd     Presentation resource type
@@ -123,6 +128,7 @@ OnlineGameDevAssetArena/
 │   ├── 04g-character-asset-processing.md  Raw/processed storage, job history and failures
 │   ├── 04h-archer-and-orc-modules.md  Independent real-art modules, calibration and checks
 │   ├── 04i-playable-characters.md  Runtime bundles, selectable art, motion labels and asset audit
+│   ├── 05-player-harness.md        Trainer contract, Player1 processing and harness
 │   ├── project-structure.md        This document
 │   ├── protocol.md                 Version 6 messages and content contract
 │   └── plan.md                     Roadmap and implementation status
@@ -187,6 +193,9 @@ The root `Makefile` provides the entry point for both programs:
 
 | Command | Purpose |
 | --- | --- |
+| `make player_harness PLAYER=player1` | Process and preview all eight required trainer states |
+| `make process_player PLAYER=player1` | Publish validated player art under build/processed/players |
+| `make check_player_harness` | Check isolated player imports, required roles and preview controls |
 | `make character_harness` | Open the isolated character art workbench |
 | `make character_harness CHARACTER=orc` | Process and preview Orc's five art roles |
 | `make character_harness CHARACTER=archer` | Process and preview Archer's five art roles, including normalized hurt/death sheets |

@@ -91,14 +91,15 @@ static func read(path: String, expected_digest := "") -> Dictionary:
 		art.clips[key] = {"fps": clip.get("fps"), "loop": clip.get("loop"), "frames": frames}
 	candidate.art = art
 	var contract := Contract.new()
-	var error := contract.load_contract()
+	var error := contract.load_for_id(candidate.contract_id)
 	if not error.is_empty(): return {"error": error}
 	return {"error": "", "candidate": candidate, "report": contract.inspect(candidate), "document": doc, "artifact_path": path}
 
 
-static func read_current(key: String) -> Dictionary:
+static func read_current(key: String, family := "characters") -> Dictionary:
 	if not key.is_valid_identifier(): return {"error": "Invalid processed module key"}
-	var directory := ProjectSettings.globalize_path("res://../build/processed/characters/").path_join(key)
+	if family not in ["characters", "players"]: return {"error": "Unknown asset family"}
+	var directory := ProjectSettings.globalize_path("res://../build/processed/" + family).path_join(key)
 	var pointer = _json(directory.path_join("current.json"))
 	var latest = _json(directory.path_join("latest_attempt.json"))
 	if not pointer is Dictionary or not pointer.get("generation") is String:
@@ -112,9 +113,10 @@ static func read_current(key: String) -> Dictionary:
 
 
 # Explicit inspection of an incomplete attempt. Never changes current.json.
-static func read_latest_candidate(key: String) -> Dictionary:
+static func read_latest_candidate(key: String, family := "characters") -> Dictionary:
 	if not key.is_valid_identifier(): return {"error": "Invalid processed module key"}
-	var directory := ProjectSettings.globalize_path("res://../build/processed/characters/").path_join(key)
+	if family not in ["characters", "players"]: return {"error": "Unknown asset family"}
+	var directory := ProjectSettings.globalize_path("res://../build/processed/" + family).path_join(key)
 	var latest = _json(directory.path_join("latest_attempt.json"))
 	if not latest is Dictionary or not latest.get("staged_artifact") is String or not latest.get("candidate_digest") is String or latest.candidate_digest.length() != 64:
 		return {"error": "The latest attempt has no complete processed candidate. Inspect the processing report.", "latest_attempt": latest}

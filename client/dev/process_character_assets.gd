@@ -11,7 +11,7 @@ func _initialize() -> void:
 
 func _run() -> void:
 	request = JSON.parse_string(FileAccess.get_file_as_string(OS.get_cmdline_user_args()[0]))
-	var result := Builder.inspect_module(request.module, request.raw_snapshot, request.trace)
+	var result := Builder.inspect_module(request.module, request.raw_snapshot, request.trace, request.get("contract_path", Builder.CharacterContract.PATH))
 	if not result.error.is_empty():
 		_finish(false, "import", result.error)
 		return

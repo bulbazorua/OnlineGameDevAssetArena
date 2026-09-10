@@ -16,6 +16,7 @@ AUDIENCE ?= 0
 AUDIENCE_DELAY ?= 5
 ASSET_SOURCE ?= $(HOME)/CONTENT_CREATION/BulbaZorua/GameAssets/Tiny Swords (Free Pack)/Tiny Swords (Free Pack)
 CHARACTER ?= reference16
+PLAYER ?= player1
 MODULE ?=
 CANDIDATE ?= 0
 COUNTDOWN ?= 0
@@ -30,8 +31,12 @@ DEV_RUN_SECONDS ?= 0
 .PHONY: character_harness process_character check_character_contract check_asset_pipeline
 .PHONY: check_character_modules
 .PHONY: prepare_characters check_playable_characters import_runtime_client
+.PHONY: player_harness process_player check_player_harness
 
 help:
+	@echo "make player_harness [PLAYER=player1] - isolated trainer art workbench, all eight states required"
+	@echo "make process_player [PLAYER=player1] - process trainer originals with provenance and reports"
+	@echo "make check_player_harness - verify player contract, processing, sizing and preview controls"
 	@echo "make prepare_characters - process and bundle complete character art for the client"
 	@echo "make character_harness [MODULE=res://dev/fixtures/characters/reference32] - isolated character art workbench"
 	@echo "make character_harness CHARACTER=orc | CHARACTER=archer - processed real-character preview"
@@ -141,6 +146,16 @@ character_harness: import_client
 process_character:
 	$(PYTHON) tools/process_character_assets.py --godot="$(GODOT)" $(if $(strip $(MODULE)),--module="$(MODULE)",--character="$(CHARACTER)")
 
+player_harness: import_client
+	$(PYTHON) tools/process_character_assets.py --godot="$(GODOT)" --family=players $(if $(strip $(MODULE)),--module="$(MODULE)",--player="$(PLAYER)") --open-harness $(if $(filter 1,$(CANDIDATE)),--candidate)
+
+process_player:
+	$(PYTHON) tools/process_character_assets.py --godot="$(GODOT)" --family=players $(if $(strip $(MODULE)),--module="$(MODULE)",--player="$(PLAYER)")
+
+check_player_harness: import_client process_player
+	$(PYTHON) tests/player_assets_check.py --godot="$(GODOT)"
+	$(GODOT) --headless --path client --script $(abspath tests/player_harness_check.gd)
+
 check_asset_pipeline:
 	$(PYTHON) tests/character_asset_pipeline_check.py --godot="$(GODOT)"
 
@@ -158,7 +173,7 @@ check_character_contract: check_client
 	$(GODOT) --headless --path client --script $(abspath tests/character_contract_check.gd)
 	$(PYTHON) tests/character_module_isolation_check.py --godot="$(GODOT)"
 
-check: check_character_contract check_asset_pipeline check_character_modules check_playable_characters check_tiny_swords check_content check_arena_content check_connection check_selection check_arena_selection check_movement check_land check_camera check_audience_delay check_dev
+check: check_player_harness check_character_contract check_asset_pipeline check_character_modules check_playable_characters check_tiny_swords check_content check_arena_content check_connection check_selection check_arena_selection check_movement check_land check_camera check_audience_delay check_dev
 
 ccx:
 	codex --dangerously-bypass-approvals-and-sandbox

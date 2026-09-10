@@ -6,3 +6,4 @@ make character_harness CHARACTER=archer
 make character_harness CHARACTER=lancer
 make character_harness CHARACTER=warrior
 make character_harness CHARACTER=monk
+make player_harness PLAYER=player1

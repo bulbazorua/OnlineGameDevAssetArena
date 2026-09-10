@@ -1,5 +1,7 @@
 # Asset Arena roadmap
 
+The separate [Player1 trainer harness](05-player-harness.md) now validates all eight required player animation states, with its own import package and processed outputs. Trainer gameplay and advice-driven gladiator behavior follow later.
+
 The working game now includes **checkpoint 4C: selectable Archer and Orc**, using independently processed art, calibrated bodies, idle/walk animation and development action labels. All five asset folders were audited; Lancer, Warrior and Monk still lack required animations. Gameplay combat states, damage, projectiles and AI remain subsequent checkpoints. The default five-second audience delay remains.
 
 | Phase | Status | Result |
@@ -27,6 +29,7 @@ The working game now includes **checkpoint 4C: selectable Archer and Orc**, usin
 | [4C — Selectable characters and movement](04i-playable-characters.md) | Implemented | Archer/Orc join the roster as IDs 5/6, load processed runtime bundles, animate idle/walk, and show dev-only action text through the audience's delayed view. Full combat certification remains future work. |
 | [4 — Gameplay size](04b-gameplay-size-proposal.md) | Body scaling proven in 4A | Equal body reference size and a fixed world ruler; authoritative character geometry integration follows later. |
 | [4 — Asset pipeline](04a-asset-pipeline-proposal.md) | Import foundation implemented; later integration proposed | Isolated imports and processed previews are in place; isolated movement, shared melee/projectiles and admission follow. |
+| [5A — Player trainer art harness](05-player-harness.md) | Implemented | Separate eight-state trainer contract, Player1 importer, processed player generations and independent previews; no trainer gameplay integration yet. |
 | AI, combat, terrain effects | Later planning | Build on live character instances and the server-owned map. |
 
 Implement and verify one checkpoint at a time. The Phase 3 document lists the proposed filenames, classes, Odin types/procedures, message layouts, and acceptance checks. The [current protocol](protocol.md) is version 6. Both Ready now starts the countdown and then enters the playable arena.

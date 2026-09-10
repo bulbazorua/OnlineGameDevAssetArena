@@ -159,7 +159,7 @@ func _load_character_art(key: String, id: int, radius: float) -> String:
 		return "Missing/invalid processed character: " + key
 	var result := CharacterArtifact.read(entry.artifact, entry.digest)
 	if not result.error.is_empty(): return result.error
-	if not result.report.art_pass or result.candidate.module_key != key or result.candidate.gameplay_definition.get("identity", {}).get("key") != key:
+	if not result.report.art_pass or result.candidate.contract_id != "character.basic_combat" or result.candidate.module_key != key or result.candidate.gameplay_definition.get("identity", {}).get("key") != key:
 		return "Character does not satisfy the animation contract: " + key
 	var definition: Dictionary = result.candidate.gameplay_definition
 	if not is_equal_approx(float(definition.footprint_radius_units) * float(definition.gameplay_size) * 32.0, radius):

@@ -30,13 +30,21 @@ var generation := ""
 var artifact_path := ""
 var candidate_mode := false
 var preview_source: OptionButton
+# Profiles reuse preview controls and normalized rendering, never module parsers.
+var contract_path := Contract.PATH
+var registry_path := "res://characters/packages/registry.json"
+var artifact_family := "characters"
+var harness_title := "Character harness · character art"
+var harness_description := "Processed art preview. Full combat checks are not implemented."
+var unverified_label := "COMBAT NOT VERIFIED"
+var missing_roles := ["hurt", "death"]
 
 
 func _ready() -> void:
 	if not OS.is_debug_build():
 		get_tree().quit(1)
 		return
-	var error := contract.load_contract()
+	var error := contract.load_contract(contract_path)
 	if not error.is_empty():
 		push_error(error)
 		get_tree().quit(1)
@@ -66,9 +74,9 @@ func _build_ui() -> void:
 	layout.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	layout.add_theme_constant_override("separation", 10)
 	scroll.add_child(layout)
-	var title := _label("Character harness · character art", layout)
+	var title := _label(harness_title, layout)
 	title.add_theme_font_size_override("font_size", 26)
-	var subtitle := _label("Processed art preview. Full combat checks are not implemented.", layout)
+	var subtitle := _label(harness_description, layout)
 	subtitle.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	build_status = _label("", layout)
 	build_status.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
@@ -81,7 +89,7 @@ func _build_ui() -> void:
 	var options := HFlowContainer.new()
 	layout.add_child(options)
 	modules = OptionButton.new()
-	var registry = JSON.parse_string(FileAccess.get_file_as_string("res://characters/packages/registry.json"))
+	var registry = JSON.parse_string(FileAccess.get_file_as_string(registry_path))
 	var selected := -1
 	if registry is Dictionary and registry.get("schema_version") == 1 and registry.get("modules") is Array:
 		for entry: Variant in registry.modules:
@@ -123,6 +131,7 @@ func _build_ui() -> void:
 		var button := _button(key.capitalize(), actions, select_role.bind(key))
 		role_buttons[key] = button
 	_button("Reset", actions, func(): select_role("idle"))
+	_button("Replay", actions, func(): select_role(role))
 	var pause_button := _button("Pause", actions, func(): paused = not paused)
 	pause_button.toggle_mode = true
 	_button("Step 1/60s", actions, func():
@@ -133,7 +142,7 @@ func _build_ui() -> void:
 	var toggles := HFlowContainer.new()
 	layout.add_child(toggles)
 	missing = CheckButton.new()
-	missing.text = "Demonstrate missing hurt/death"
+	missing.text = "Demonstrate missing " + "/".join(missing_roles)
 	missing.toggled.connect(func(_enabled): load_module())
 	toggles.add_child(missing)
 	var geometry := CheckButton.new()
@@ -177,7 +186,7 @@ func _build_ui() -> void:
 
 
 func load_module() -> void:
-	var result := Artifact.read_latest_candidate(module_path.get_file()) if candidate_mode else Artifact.read_current(module_path.get_file())
+	var result := Artifact.read_latest_candidate(module_path.get_file(), artifact_family) if candidate_mode else Artifact.read_current(module_path.get_file(), artifact_family)
 	latest_attempt = result.get("latest_attempt") if result.get("latest_attempt") is Dictionary else {}
 	generation = result.get("generation", "")
 	artifact_path = result.get("artifact_path", "")
@@ -196,11 +205,11 @@ func load_module() -> void:
 		return
 	candidate = result.candidate
 	if candidate != null and candidate.art != null and missing.button_pressed:
-		candidate.art.bindings.assign(candidate.art.bindings.filter(func(binding): return binding.get("role") not in ["hurt", "death"]))
+		candidate.art.bindings.assign(candidate.art.bindings.filter(func(binding): return binding.get("role") not in missing_roles))
 	report = contract.inspect(candidate)
 	elapsed = 0
 	_configure_views()
-	var lines := PackedStringArray(["%s@%s  |  COMBAT NOT VERIFIED  |  Export API %s" % [contract.data.id, contract.data.version, contract.data.export_api_version]])
+	var lines := PackedStringArray(["%s@%s  |  %s  |  Export API %s" % [contract.data.id, contract.data.version, unverified_label, contract.data.export_api_version]])
 	for status in ["fail", "pass", "not_run"]:
 		for check: Dictionary in report.checks:
 			if check.status == status: lines.append("%s · %s — %s" % [check.status.to_upper(), check.id, check.message])
@@ -247,7 +256,7 @@ func _present() -> void:
 
 
 func save_report() -> void:
-	var directory := ProjectSettings.globalize_path("res://../build/verification/characters/harness")
+	var directory := ProjectSettings.globalize_path("res://../build/verification/" + artifact_family + "/harness")
 	DirAccess.make_dir_recursive_absolute(directory)
 	var file := FileAccess.open(directory.path_join("report.json"), FileAccess.WRITE)
 	if file != null:

@@ -4,15 +4,16 @@ extends RefCounted
 const CharacterExports = preload("res://characters/import/character_exports.gd")
 const AssetScale = preload("res://presentation/asset_scale.gd")
 const PATH := "res://content/contracts/character_basic_combat/1.0.0-draft.1.json"
+const PLAYER_PATH := "res://content/contracts/player_trainer/1.0.0-draft.1.json"
 var data: Dictionary = {}
 var digest := ""
 
 
-func load_contract() -> String:
+func load_contract(path: String = PATH) -> String:
 	data.clear()
 	digest = ""
-	var file := FileAccess.open(PATH, FileAccess.READ)
-	if file == null: return "Cannot read character contract: " + PATH
+	var file := FileAccess.open(path, FileAccess.READ)
+	if file == null: return "Cannot read art contract: " + path
 	var bytes := file.get_buffer(file.get_length())
 	var parsed = JSON.parse_string(bytes.get_string_from_utf8())
 	if not parsed is Dictionary or parsed.get("schema_version") != 1 or not parsed.get("roles") is Dictionary or not parsed.get("facings") is Array or not parsed.get("admission_checks") is Array:
@@ -25,6 +26,16 @@ func load_contract() -> String:
 	hash.update(bytes)
 	digest = hash.finish().hex_encode()
 	return ""
+
+
+func load_for_id(id: String) -> String:
+	# Explicit supported contracts. Asset metadata cannot choose arbitrary files.
+	match id:
+		"character.basic_combat": return load_contract(PATH)
+		"player.trainer": return load_contract(PLAYER_PATH)
+	data.clear()
+	digest = ""
+	return "Unsupported art contract: " + id
 
 
 func inspect(candidate: CharacterExports) -> Dictionary:

@@ -8,9 +8,9 @@ const AssetSources = preload("res://characters/import/character_asset_sources.gd
 
 
 # Development workbench dispatch only. No roster writes or filename inference.
-static func inspect_module(module_path: String, source_root := "", trace_path := "") -> Dictionary:
+static func inspect_module(module_path: String, source_root := "", trace_path := "", contract_path: String = CharacterContract.PATH) -> Dictionary:
 	var contract := CharacterContract.new()
-	var error := contract.load_contract()
+	var error := contract.load_contract(contract_path)
 	if not error.is_empty(): return {"error": error}
 	if not module_path.begins_with("res://") or ".." in module_path:
 		return {"error": "Module must be a local res:// directory."}

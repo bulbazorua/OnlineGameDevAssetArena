@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 """Runtime bundles survive without source modules; failures cannot publish mixed output."""
 import argparse
+import copy
+import hashlib
 import json
 from pathlib import Path
 import shutil
@@ -52,10 +54,31 @@ def main():
         run(load)
         entries = json.loads(original)["modules"]
         artifact = root / "client" / entries["archer"]["artifact"].removeprefix("res://")
+        # A valid trainer contract cannot enter the gladiator roster, even with
+        # matching identity/footprint and intact processed frame hashes.
+        artifact_bytes = artifact.read_bytes()
+        trainer = json.loads(artifact_bytes)
+        trainer["contract_id"] = "player.trainer"
+        bindings = []
+        mapping = {"idle": ["idle"], "walk": ["walk", "run"], "attack": ["advise"],
+                   "hurt": ["hurt", "cheer", "surprised"], "death": ["disappointed"]}
+        for binding in trainer["bindings"]:
+            for role in mapping[binding["role"]]:
+                entry = copy.deepcopy(binding)
+                entry.update(role=role, variant="default")
+                bindings.append(entry)
+        trainer["bindings"] = bindings
+        artifact.write_text(json.dumps(trainer))
+        swapped = json.loads(original)
+        swapped["modules"]["archer"]["digest"] = hashlib.sha256(artifact.read_bytes()).hexdigest()
+        index.write_text(json.dumps(swapped))
+        assert "animation contract" in run(load, success=False)
+        artifact.write_bytes(artifact_bytes)
+        index.write_bytes(original)
         frames = next(iter(json.loads(artifact.read_text())["clips"].values()))["frames"]
         (artifact.parent / frames[0]["path"]).write_bytes(b"corrupted frame")
         assert "SHA-256 mismatch" in run(load, success=False)
-        print("PASS: cached runtime bundles, failed import retention, no raw/module/build dependency and corrupted frame rejection")
+        print("PASS: cached runtime bundles, failed import retention, no raw/module/build dependency, trainer/character separation and corrupted frame rejection")
 
 
 if __name__ == "__main__":

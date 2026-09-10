@@ -1,0 +1,93 @@
+{
+  "schema_version": 1,
+  "id": "player.trainer",
+  "version": "1.0.0-draft.1",
+  "export_api_version": "0.1.0",
+  "world_units_per_gameplay_unit": 32,
+  "facings": [
+    "north",
+    "north_east",
+    "east",
+    "south_east",
+    "south",
+    "south_west",
+    "west",
+    "north_west"
+  ],
+  "roles": {
+    "idle": {
+      "variant": "default",
+      "loop": true,
+      "minimum_frames": 1,
+      "binding_kinds": [
+        "clip"
+      ]
+    },
+    "walk": {
+      "variant": "default",
+      "loop": true,
+      "minimum_frames": 2,
+      "binding_kinds": [
+        "clip"
+      ]
+    },
+    "run": {
+      "variant": "default",
+      "loop": true,
+      "minimum_frames": 2,
+      "binding_kinds": [
+        "clip"
+      ]
+    },
+    "advise": {
+      "variant": "default",
+      "loop": false,
+      "minimum_frames": 2,
+      "binding_kinds": [
+        "clip"
+      ]
+    },
+    "hurt": {
+      "variant": "default",
+      "loop": false,
+      "minimum_frames": 2,
+      "binding_kinds": [
+        "clip"
+      ]
+    },
+    "cheer": {
+      "variant": "default",
+      "loop": false,
+      "minimum_frames": 2,
+      "binding_kinds": [
+        "clip"
+      ]
+    },
+    "surprised": {
+      "variant": "default",
+      "loop": false,
+      "minimum_frames": 2,
+      "binding_kinds": [
+        "clip"
+      ]
+    },
+    "disappointed": {
+      "variant": "default",
+      "loop": false,
+      "minimum_frames": 2,
+      "binding_kinds": [
+        "clip"
+      ]
+    }
+  },
+  "required_components": [
+    "identity",
+    "metrics"
+  ],
+  "admission_checks": [
+    "player_movement",
+    "advice_events",
+    "networking",
+    "visual_review"
+  ]
+}
