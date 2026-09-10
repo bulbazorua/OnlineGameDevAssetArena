@@ -41,13 +41,13 @@ func configure(content: GameContent) -> void:
 		preview.position = Vector2(52, 66)
 		panel.add_child(preview)
 		_previews.append(preview)
-		var title := _label("PLAYER %d" % (index + 1), Vector2(104, 18), 15)
+		var title := _label("PLAYER %d" % (index + 1), Vector2(130, 18), 15)
 		title.add_theme_color_override("font_color", CharacterView.PLAYER_COLORS[index + 1])
 		panel.add_child(title)
-		var name_label := _label("Choose a character", Vector2(104, 45), 20)
+		var name_label := _label("Choose a character", Vector2(130, 45), 20)
 		panel.add_child(name_label)
 		_names.append(name_label)
-		var ready_label := _label("Choosing…", Vector2(104, 81), 16)
+		var ready_label := _label("Choosing…", Vector2(130, 81), 16)
 		panel.add_child(ready_label)
 		_ready_labels.append(ready_label)
 	for definition in content.characters:
@@ -61,13 +61,13 @@ func configure(content: GameContent) -> void:
 		%CharacterGrid.add_child(card)
 		cards[definition.id] = card
 		var view: CharacterView = CHARACTER_VIEW_SCENE.instantiate()
-		view.position = Vector2(43, 53)
-		view.configure(content.visuals[definition.id])
+		view.position = Vector2(43, 80 if content.character_art.has(definition.id) else 53)
+		content.configure_character(view, definition.id, 0, 24.0, 1.5)
 		card.add_child(view)
-		card.add_child(_label(definition.display_name, Vector2(84, 20), 23))
-		var badge_row := HBoxContainer.new()
-		badge_row.position = Vector2(84, 63)
-		badge_row.add_theme_constant_override("separation", 16)
+		card.add_child(_label(definition.display_name, Vector2(106, 20), 21))
+		var badge_row := VBoxContainer.new()
+		badge_row.position = Vector2(106, 51)
+		badge_row.add_theme_constant_override("separation", 2)
 		badge_row.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		card.add_child(badge_row)
 		var badges: Array[Label] = []
@@ -94,7 +94,8 @@ func display_session(snapshot: SessionSnapshot, local_player_id: int) -> void:
 	audience_label.text = "%d watching" % snapshot.audience_count
 	for index in 2:
 		var slot := snapshot.players[index]
-		_previews[index].configure(_content.visuals.get(slot.character_id), index + 1, 31.0)
+		_content.configure_character(_previews[index], slot.character_id, index + 1, 31.0, 2.0)
+		_previews[index].position.y = 100 if _content.character_art.has(slot.character_id) else 66
 		_names[index].text = _content.by_id[slot.character_id].display_name if slot.character_id != 0 else "No selection"
 		_ready_labels[index].text = "READY" if slot.ready else "Choosing…"
 		_ready_labels[index].add_theme_color_override("font_color", Color("89e4b1") if slot.ready else Color("a7b7ce"))

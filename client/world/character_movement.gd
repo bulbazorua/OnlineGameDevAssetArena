@@ -16,9 +16,9 @@ static func move(position: Vector2, mask: int, radius: float, arena: ArenaCatalo
 	var displacement := direction.normalized() * SPEED * STEP
 	var result := position
 	var candidate := result + Vector2(displacement.x, 0)
-	if catalog.position_is_clear(arena, candidate, radius):
+	if catalog.position_is_clear(arena, candidate, radius) and catalog.step_is_allowed(arena, result, candidate):
 		result = candidate
 	candidate = result + Vector2(0, displacement.y)
-	if catalog.position_is_clear(arena, candidate, radius):
+	if catalog.position_is_clear(arena, candidate, radius) and catalog.step_is_allowed(arena, result, candidate):
 		result = candidate
 	return result

@@ -1,0 +1,15 @@
+# Archer source and calibration
+
+Originals: `client/assets/Characters/Archer/`. The original Idle/Run/Shoot/Arrow PNGs match byte-for-byte, by SHA-256, the local `Tiny Swords (Free Pack)/Tiny Swords (Free Pack)/Units/Black Units/Archer/` folder under `~/CONTENT_CREATION/BulbaZorua/GameAssets/` (checked 2026-09-10). `Archer_hurt.png` and `Archer_death.png` were supplied separately by the user on 2026-09-10. Exact hashes, matching pack filenames and the two additional sources are recorded in `source_manifest.json`.
+
+The module reads these originals without modifying or relocating them. Its own `art.json` and importer define the original 192×192 cells, left-to-right order and preview FPS. Its exporter maps `bow_rest` to idle (6 frames), `bow_run` to walk (4), `bow_shoot` to primary attack (8), `bow_hurt` to hurt (6), and `bow_fall` to death (7). Hurt plays once at 10 FPS; death plays once at 8 FPS and holds the fallen final pose. These are preview timings. `Arrow.png` is inventoried but reserved for the later shared projectile extension.
+
+The additional sheets are both 2172×724 with unevenly spaced poses. Archer's private `authored_sequences` configuration lists each crop and source ground anchor explicitly. Hurt crops use scale 0.3; death crops use 0.35, calibrated from their standing bodies. The importer resizes each crop with nearest-neighbor sampling and places it on a transparent 192×192 canvas with its ground anchor at `(96,128)`, within half a processed pixel of rounding. Falling and compressed poses retain the sequence's fixed scale; they are never expanded to fill the neutral body box. The original three strips remain exact native crops.
+
+Every normalized frame's origin records a version-1 `resize_canvas` transform: resize dimensions, sampling filter, canvas dimensions, placement, source ground and target ground. Shared infrastructure records this trace without interpreting Archer's layout. Pixel checks replay the transform from the original crop. No source file is modified, and faint alpha pixels are preserved in the processed output; rendered silhouette measurements ignore alpha below 32/255 because those specks can disappear under minification.
+
+Neutral body calibration uses `(72,64,48,64)` and ground anchor `(96,128)` in each full source frame. The 64px reference includes the main helmet/body/feet, excluding the high ornament, bow/quiver protrusions and ground shadow. All clips retain their authored canvas and alignment, including recoil. These are presentation measurements, not hitboxes.
+
+The source art provides one view. All eight logical facings explicitly reuse it, with horizontal mirroring for west, northwest and southwest. North/south do not acquire new directional artwork. Attack FPS and these directional fallbacks do not define damage timing or aim.
+
+Private parsing is contained in this folder. `CharacterAssetSources` provides common verified file reads, cropping and trace recording; neither it nor the coordinator knows Archer's filenames, cell layout or role mapping.

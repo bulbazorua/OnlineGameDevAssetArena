@@ -11,9 +11,10 @@ const ArenaWorld = preload("res://world/arena_world.gd")
 const INTERPOLATION_SECONDS := 0.05
 const MAX_PENDING_INPUTS := 120
 const STALE_WORLD_MS := 500
+const ArenaCamera = preload("res://world/arena_camera.gd")
 
 @onready var world: ArenaWorld = $ArenaWorld
-@onready var camera: Camera2D = $Camera2D
+@onready var camera: ArenaCamera = $Camera2D
 @onready var hud: CanvasLayer = $HUD
 @onready var countdown_label: Label = %Countdown
 @onready var phase_label: Label = %Phase
@@ -36,15 +37,24 @@ var _interpolation_time := 0.0
 var _last_tick := -1
 var _last_world_ms := 0
 var _last_local_position := Vector2.ZERO
+var debug_actions := false
+var camera_owner: int:
+	get: return camera.follow_owner
 
 
 func configure(game_content: GameContent, connection: GameConnection) -> void:
 	content = game_content
 	network = connection
+	debug_actions = OS.is_debug_build() and "--dev" in OS.get_cmdline_user_args()
 	world.show_spawn_markers = false
 	return_button.pressed.connect(network.request_return_to_lobby)
 	%DisconnectButton.pressed.connect(network.disconnect_from_host)
-	get_viewport().size_changed.connect(_fit_camera)
+	camera.view_changed.connect(_update_camera_controls)
+	%OverviewButton.pressed.connect(set_camera_owner.bind(0))
+	%FollowOneButton.pressed.connect(set_camera_owner.bind(1))
+	%FollowTwoButton.pressed.connect(set_camera_owner.bind(2))
+	%ZoomInButton.pressed.connect(camera.zoom_by.bind(1.0))
+	%ZoomOutButton.pressed.connect(camera.zoom_by.bind(-1.0))
 
 
 func display_session(state: SessionSnapshot) -> void:
@@ -61,16 +71,18 @@ func display_session(state: SessionSnapshot) -> void:
 	if new_round:
 		_clear_characters()
 		world.load_arena(content, content.arena_catalog.arenas_by_id[state.map_id])
-		_fit_camera()
+		camera.configure_role(Vector2(world.definition.width, world.definition.height) * world.definition.tile_size, network.player_id)
 	if not was_active:
 		get_viewport().gui_release_focus()
 		camera.make_current()
 		camera.force_update_scroll()
 	snapshot = state
+	_update_camera()
 	var role := "Audience" if network.player_id == 0 else "Player %d" % network.player_id
 	title_label.text = "%s  ·  %s  ·  %d watching" % [world.definition.display_name, role, state.audience_count]
 	return_button.visible = network.player_id != 0
-	controls_label.text = "Watching both players" if network.player_id == 0 else "WASD / Arrow keys to move  ·  Your character has a white ring"
+	%AudienceControls.visible = network.player_id == 0
+	controls_label.text = "Wheel / + −: zoom · Right / middle drag or WASD: pan · 0: reset · 1 / 2: follow" if network.player_id == 0 else "WASD / Arrows to move · Your character stays centered"
 	var names: Array[String] = []
 	for index in 2:
 		names.append("P%d · %s" % [index + 1, content.by_id[state.players[index].character_id].display_name])
@@ -79,6 +91,8 @@ func display_session(state: SessionSnapshot) -> void:
 	countdown_label.visible = state.phase == SessionSnapshot.Phase.COUNTDOWN
 	countdown_label.text = str(state.countdown_seconds)
 	phase_label.text = "Get ready" if state.phase == SessionSnapshot.Phase.COUNTDOWN else "Arena sandbox"
+	if network.player_id == 0:
+		phase_label.text += " · " + network.audience_timeline_label()
 	if state.phase == SessionSnapshot.Phase.IN_ARENA:
 		apply_world(state)
 
@@ -98,7 +112,8 @@ func apply_world(state: SessionSnapshot) -> void:
 		if fresh:
 			view = CharacterView.new()
 			view.is_local = character.owner_id == network.player_id
-			view.configure(content.visuals[character.definition_id], character.owner_id, content.by_id[character.definition_id].footprint_radius)
+			content.configure_character(view, character.definition_id, character.owner_id, content.by_id[character.definition_id].footprint_radius)
+			view.set_debug_actions(debug_actions)
 			view.position = character.position
 			$Characters.add_child(view)
 			character_views[character.entity_id] = view
@@ -118,6 +133,11 @@ func apply_world(state: SessionSnapshot) -> void:
 				_correction = Vector2.ZERO
 			view.position = predicted_position + _correction
 		else:
+			var previous: Vector2 = _remote_target.get(character.entity_id, character.position)
+			var movement := character.position - previous
+			if fresh:
+				movement = CharacterMovement.move(character.position, character.input_mask, view.radius, world.definition, content.arena_catalog) - character.position
+			view.observe_motion(movement)
 			_remote_from[character.entity_id] = view.position
 			_remote_target[character.entity_id] = character.position
 
@@ -135,10 +155,13 @@ func _physics_process(_delta: float) -> void:
 		_pending.clear()
 		predicted_position = _last_local_position
 		_correction = Vector2.ZERO
+		character_views[_local_entity].observe_motion(Vector2.ZERO)
 		return
 	_pending.append(Vector2i(_sequence, mask))
 	var view: CharacterView = character_views[_local_entity]
+	var previous := predicted_position
 	predicted_position = CharacterMovement.move(predicted_position, mask, view.radius, world.definition, content.arena_catalog)
+	view.observe_motion(predicted_position - previous)
 
 
 func _process(delta: float) -> void:
@@ -148,15 +171,33 @@ func _process(delta: float) -> void:
 	var weight := minf(_interpolation_time / INTERPOLATION_SECONDS, 1.0)
 	for id: int in _remote_target:
 		character_views[id].position = _remote_from[id].lerp(_remote_target[id], weight)
+		if Time.get_ticks_msec() - _last_world_ms > STALE_WORLD_MS:
+			character_views[id].observe_motion(Vector2.ZERO)
 	if _local_entity != 0:
 		_correction *= exp(-20.0 * delta)
 		character_views[_local_entity].position = predicted_position + _correction
+	_update_camera(delta)
+
+
+func _input(event: InputEvent) -> void:
+	if visible and camera.continue_input(event):
+		get_viewport().set_input_as_handled()
+
+
+func _unhandled_input(event: InputEvent) -> void:
+	if visible and camera.handle_pointer(event):
+		get_viewport().set_input_as_handled()
 
 
 func _unhandled_key_input(event: InputEvent) -> void:
-	if not visible or network == null or network.player_id == 0 or not event is InputEventKey or event.echo:
+	if not visible or network == null or not event is InputEventKey or event.echo:
 		return
 	var key: int = event.physical_keycode if event.physical_keycode != 0 else event.keycode
+	if network.player_id == 0:
+		if camera.handle_key(event):
+			_update_camera()
+			get_viewport().set_input_as_handled()
+		return
 	if key not in [KEY_A, KEY_D, KEY_W, KEY_S, KEY_LEFT, KEY_RIGHT, KEY_UP, KEY_DOWN]:
 		return
 	if event.pressed:
@@ -178,19 +219,38 @@ func input_mask() -> int:
 func _notification(what: int) -> void:
 	if what in [NOTIFICATION_WM_WINDOW_FOCUS_OUT, NOTIFICATION_APPLICATION_FOCUS_OUT]:
 		_pressed_keys.clear()
+		if is_node_ready(): camera.reset_input()
 
 
-func _fit_camera() -> void:
-	if not is_node_ready() or world.definition == null:
+func _update_camera_controls() -> void:
+	%OverviewButton.set_pressed_no_signal(camera.is_overview)
+	%FollowOneButton.set_pressed_no_signal(camera_owner == 1)
+	%FollowTwoButton.set_pressed_no_signal(camera_owner == 2)
+	%ZoomLabel.text = "%d%%" % roundi(camera.zoom.x * 100)
+	%ZoomOutButton.disabled = camera.zoom.x <= camera.overview_zoom() + 0.001
+	%ZoomInButton.disabled = camera.zoom.x >= ArenaCamera.MAX_ZOOM - 0.001
+
+
+func set_camera_owner(owner: int) -> void:
+	camera.select_view(owner)
+	_update_camera()
+
+
+func _update_camera(delta := 0.0) -> void:
+	if world.definition == null:
 		return
-	var arena_size := Vector2(world.definition.width, world.definition.height) * world.definition.tile_size
-	var available := get_viewport_rect().size - Vector2(48, 200)
-	camera.position = arena_size * 0.5
-	camera.zoom = Vector2.ONE * maxf(0.1, minf(available.x / arena_size.x, available.y / arena_size.y))
-	camera.force_update_scroll()
+	var target := camera.position
+	if camera_owner > 0:
+		target = world.definition.cell_center(world.definition.spawns[camera_owner - 1])
+		if snapshot != null:
+			for character in snapshot.characters:
+				if character.owner_id == camera_owner and character_views.has(character.entity_id):
+					target = character_views[character.entity_id].position
+	camera.update_view(target, delta)
 
 
 func _clear_characters() -> void:
+	camera.reset_input()
 	for view: CharacterView in character_views.values():
 		view.queue_free()
 	character_views.clear()

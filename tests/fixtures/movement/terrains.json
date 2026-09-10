@@ -1,0 +1,40 @@
+{
+  "schema_version": 1,
+  "terrains": [
+    {
+      "id": 1,
+      "key": "grass",
+      "display_name": "Grass",
+      "symbol": ".",
+      "walkable": true
+    },
+    {
+      "id": 2,
+      "key": "ground",
+      "display_name": "Ground",
+      "symbol": "g",
+      "walkable": true
+    },
+    {
+      "id": 3,
+      "key": "sand",
+      "display_name": "Sand",
+      "symbol": "s",
+      "walkable": true
+    },
+    {
+      "id": 4,
+      "key": "water",
+      "display_name": "Water",
+      "symbol": "w",
+      "walkable": false
+    },
+    {
+      "id": 5,
+      "key": "stone",
+      "display_name": "Stone",
+      "symbol": "#",
+      "walkable": false
+    }
+  ]
+}

@@ -1,0 +1,27 @@
+{
+  "schema_version": 1,
+  "module_key": "orc",
+  "raw_root": "client/assets/Characters/Orc",
+  "files": {
+    "Orc.png": "0481144f6a536df7592d81059c13e71ce7faccd04e07f48bf44465f19ca761c5",
+    "Orc_Attack01.png": "642bd0df611abf91dda5adf2f6061a2d8decc7997f8277d681af6693b6a0f9a7",
+    "Orc_Attack02.png": "01ffe346a493820a604d92bfc5cd41f94971be6e8b35b354b4c7db013a55309a",
+    "Orc_Death.png": "cf376c07465cd284a838ed0abc977823faa92e0aa4f9db0461e33b11143cc13f",
+    "Orc_Hurt.png": "9870c61b29eb6594b20b184b3332a6be8c3fdceb002fe5fd2b158b9b054d7eef",
+    "Orc_Idle.png": "430b6a97ca4cfa80998d53422f3e942cd50ca906335c350e5615651f35c7aef4",
+    "Orc_Walk.png": "6d892ffd6e8fccea65480f89e29ef145faaa05cc742534717023237093f500d7"
+  },
+  "provenance": {
+    "local_pack_directory": "Tiny RPG Character Asset Pack 01 v2.0 -Free Soldier&Orc/Characters(100x100 split)/Orc/Orc with shadows",
+    "matching_files": [
+      "Orc.png",
+      "Orc_Attack01.png",
+      "Orc_Attack02.png",
+      "Orc_Death.png",
+      "Orc_Hurt.png",
+      "Orc_Idle.png",
+      "Orc_Walk.png"
+    ],
+    "license_review": "Not part of this local import checkpoint"
+  }
+}

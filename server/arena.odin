@@ -16,6 +16,7 @@ Arena_Definition :: struct {
     key, display_name: string,
     width, height, tile_size: int,
     cells: []u16, // Terrain IDs, row-major. No renderer-specific tile indices.
+    elevations: []u8, // Discrete land levels; stairs connect adjacent levels.
     spawns: [2][2]int,
 }
 
@@ -45,6 +46,20 @@ arena_cell_center :: proc(arena: ^Arena_Definition, cell: [2]int) -> [2]f32 {
 
 arena_world_to_cell :: proc(arena: ^Arena_Definition, position: [2]f32) -> [2]int {
     return {int(math.floor(position.x / f32(arena.tile_size))), int(math.floor(position.y / f32(arena.tile_size)))}
+}
+
+arena_elevation_at :: proc(arena: ^Arena_Definition, cell: [2]int) -> int {
+    if arena_terrain_id(arena, cell) == 0 { return -1 }
+    if len(arena.elevations) == 0 { return 0 }
+    return int(arena.elevations[cell.y * arena.width + cell.x])
+}
+
+arena_step_is_allowed :: proc(arena: ^Arena_Definition, content: ^Game_Content, from, to: [2]f32) -> bool {
+    a, b := arena_world_to_cell(arena, from), arena_world_to_cell(arena, to)
+    height_a, height_b := arena_elevation_at(arena, a), arena_elevation_at(arena, b)
+    if height_a == height_b { return true }
+    first, second := content_terrain(content, arena_terrain_id(arena, a)), content_terrain(content, arena_terrain_id(arena, b))
+    return first != nil && second != nil && abs(height_a - height_b) == 1 && (first.key == "stairs" || second.key == "stairs")
 }
 
 // Spawn validation and movement use the same circular footprint.
@@ -119,6 +134,7 @@ content_parse_arenas :: proc(content: ^Game_Content, root: json.Object) -> bool 
         // Own allocations before parsing cells so a failed load can release everything.
         append(&content.arenas, Arena_Definition{id = u16(id), key = strings.clone(string(key)), display_name = strings.clone(string(name)), width = int(width), height = int(height), tile_size = int(tile_size), cells = make([]u16, int(width * height))})
         arena := &content.arenas[len(content.arenas) - 1]
+        arena.elevations = make([]u8, arena.width * arena.height)
         for row_value, y in rows {
             row, row_ok := row_value.(json.String)
             if !row_ok || len(row) != arena.width { return false }
@@ -127,6 +143,18 @@ content_parse_arenas :: proc(content: ^Game_Content, root: json.Object) -> bool 
                 arena.cells[y * arena.width + x] = symbols[row[x]]
             }
         }
+        if schema, _ := content_integer(root["schema_version"]); schema == 2 {
+            heights, heights_ok := fields["elevation_rows"].(json.Array)
+            if !heights_ok || len(heights) != arena.height { return false }
+            for value, y in heights {
+                row, valid := value.(json.String)
+                if !valid || len(row) != arena.width { return false }
+                for x in 0..<arena.width {
+                    if row[x] < '0' || row[x] > '3' { return false }
+                    arena.elevations[y * arena.width + x] = row[x] - '0'
+                }
+            }
+        } else if _, exists := fields["elevation_rows"]; exists { return false }
         for spawn_value, index in spawns {
             coordinates, coord_ok := spawn_value.(json.Array)
             if !coord_ok || len(coordinates) != 2 { return false }

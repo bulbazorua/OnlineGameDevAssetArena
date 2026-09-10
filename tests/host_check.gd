@@ -27,7 +27,7 @@ func _run() -> void:
 		return
 	port = reservation.get_local_port()
 	reservation.close()
-	host_pid = OS.create_process(server_path, ["--bind=127.0.0.1", "--port=%d" % port, "--content-dir=" + ProjectSettings.globalize_path("res://content/data")])
+	host_pid = OS.create_process(server_path, _host_arguments())
 	if host_pid <= 0:
 		push_error("Could not start the Odin host.")
 		quit(1)
@@ -66,3 +66,7 @@ func _wait_for(condition: Callable, timeout_ms := 7000) -> bool:
 
 func _check() -> String:
 	return "No check implemented."
+
+
+func _host_arguments() -> PackedStringArray:
+	return PackedStringArray(["--audience-delay=0", "--bind=127.0.0.1", "--port=%d" % port, "--content-dir=" + ProjectSettings.globalize_path("res://content/data")])

@@ -1,6 +1,15 @@
 # Local builds, downloaded build dependencies, and verification artifacts.
 /build/
+/client/generated/
+
+# Python processing tools and tests create local bytecode caches.
+__pycache__/
+*.py[cod]
 
 # Godot-generated caches and imported translations. Keep .uid and .import files.
 /client/.godot/
 /client/**/*.translation
+
+# Current Tiny Swords publisher terms restrict redistribution of raw assets.
+# Keep manifest/provenance/import metadata; install PNGs locally with Make.
+/client/assets/tiny_swords/**/*.png

@@ -1,0 +1,27 @@
+{
+  "schema_version": 1,
+  "module_key": "archer",
+  "raw_root": "client/assets/Characters/Archer",
+  "files": {
+    "Archer_Idle.png": "39c1e9e822a39e75f60c3d0bfc26552aed9bab3e78c0d9b1993a4f63722fc019",
+    "Archer_Run.png": "d6c92beaedbf2370f5971a4d2fe8901b60b676185e882c9d4fd137c29895dec3",
+    "Archer_Shoot.png": "694fa3c26df598a384da5ab98e946bdc48f38861222ad9f2720a1758b1ae6dba",
+    "Arrow.png": "937678d6349172779b5541164a36a49d9ae7c08a741831aaae45ffe3d86fc769",
+    "Archer_hurt.png": "bd355e3202290f257a8ec1d7cbe88c316ed8e46fff4f24920142ccf25c761ce5",
+    "Archer_death.png": "9c7ddee077f6ba3afd6430a469ac1fd9d38ec5ed55d2c2c0261df69193f3c4b7"
+  },
+  "provenance": {
+    "local_pack_directory": "Tiny Swords (Free Pack)/Tiny Swords (Free Pack)/Units/Black Units/Archer",
+    "matching_files": [
+      "Archer_Idle.png",
+      "Archer_Run.png",
+      "Archer_Shoot.png",
+      "Arrow.png"
+    ],
+    "license_review": "Not part of this local import checkpoint",
+    "additional_sources": {
+      "Archer_hurt.png": {"origin": "User-supplied animation sheet", "added_on": "2026-09-10"},
+      "Archer_death.png": {"origin": "User-supplied animation sheet", "added_on": "2026-09-10"}
+    }
+  }
+}

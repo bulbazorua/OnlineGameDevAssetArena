@@ -108,4 +108,4 @@ func _ready_requested() -> void:
 
 
 func _show_terrain(cell: Vector2i, terrain: ArenaCatalog.TerrainDefinition) -> void:
-	terrain_label.text = "Tile (%d, %d) · %s · %s" % [cell.x, cell.y, terrain.display_name, "Walkable" if terrain.walkable else "Blocked"]
+	terrain_label.text = "Tile (%d, %d) · %s · Level %d · %s" % [cell.x, cell.y, terrain.display_name, preview.world.definition.elevation_at(cell), "Walkable" if terrain.walkable else "Blocked"]

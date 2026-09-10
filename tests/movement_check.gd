@@ -46,16 +46,25 @@ func _check() -> String:
 	for client in [first, second, watcher]:
 		if countdowns[client] != [5, 4, 3, 2, 1]: return "A client skipped/repeated countdown numbers: " + str(countdowns[client])
 	var initial: SessionSnapshot = first.network.session
+	var map = first.game_arena.world.definition
+	var spawn_one: Vector2 = map.cell_center(map.spawns[0])
+	var spawn_two: Vector2 = map.cell_center(map.spawns[1])
 	var first_id: int = initial.characters[0].entity_id
 	for client in clients:
 		var game = client.game_arena
 		if game.character_views.size() != 2 or game.world.show_spawn_markers or game.countdown_label.visible: return "Arena entry did not replace markers/countdown with two characters."
-		if not game.camera.position.is_equal_approx(Vector2(320, 224)): return "Camera is not centered on the arena."
-		var visible_size: Vector2 = Vector2(640, 448) * game.camera.zoom
-		if visible_size.x > root.get_visible_rect().size.x - 48.0 + 1 or visible_size.y > root.get_visible_rect().size.y - 200.0 + 1: return "Camera cropped the arena or HUD."
+		if game.camera_owner != client.network.player_id: return "Camera did not default to player follow/audience overview."
+		game.set_camera_owner(0)
+		if client.network.player_id == 0:
+			var dimensions: Vector2 = Vector2(map.width, map.height) * map.tile_size
+			if not game.camera.position.is_equal_approx(dimensions * 0.5): return "Overview is not centered on the arena."
+			var visible_size: Vector2 = dimensions * game.camera.zoom
+			if visible_size.x > root.get_visible_rect().size.x - 48.0 + 1 or visible_size.y > root.get_visible_rect().size.y - 240.0 + 1: return "Overview cropped the arena or HUD."
+		elif game.camera_owner != client.network.player_id:
+			return "Player camera could be unlocked."
 		for state in client.network.session.characters:
 			var view = game.character_views[state.entity_id]
-			var expected := Vector2(144, 240) if state.owner_id == 1 else Vector2(496, 240)
+			var expected := spawn_one if state.owner_id == 1 else spawn_two
 			if state.position != expected or view.visual.character_id != state.owner_id + 2 or view.player_id != state.owner_id or view.is_local != (state.owner_id == client.network.player_id): return "Spawn identity, selected visual, ownership color/ring, or position was wrong."
 	if watcher.game_arena.return_button.visible: return "Audience can return fighters to lobby."
 
@@ -63,7 +72,7 @@ func _check() -> String:
 	first.network.set_process(false)
 	_key(first, KEY_D, true)
 	await create_timer(0.10).timeout
-	if first.game_arena.predicted_position.x <= 153 or first.game_arena._pending.is_empty(): return "Local input waited for incoming host snapshots."
+	if first.game_arena.predicted_position.x <= spawn_one.x + 9 or first.game_arena._pending.is_empty(): return "Local input waited for incoming host snapshots."
 	first.network.set_process(true)
 	_key(second, KEY_LEFT, true)
 	await create_timer(0.28).timeout
@@ -71,7 +80,12 @@ func _check() -> String:
 	_key(second, KEY_LEFT, false)
 	await create_timer(0.18).timeout
 	if not await _wait_for(_positions_converged): return "Player movement did not settle to the same positions on every client."
-	if _position(first, 1).x <= 174 or _position(first, 2).x >= 475 or _position(first, 1).y != 240 or _position(first, 2).y != 240: return "WASD/arrows did not independently move the two selected characters."
+	if _position(first, 1).x <= spawn_one.x + 30 or _position(first, 2).x >= spawn_two.x - 21 or _position(first, 1).y != spawn_one.y or _position(first, 2).y != spawn_two.y: return "WASD/arrows did not independently move the two selected characters."
+	if first.game_arena.camera.position.distance_to(first.game_arena.predicted_position) > 1: return "Local camera did not follow movement."
+	watcher.game_arena.set_camera_owner(2)
+	await create_timer(0.05).timeout
+	if watcher.game_arena.camera.position.distance_to(_position(watcher, 2)) > 1: return "Audience could not follow P2."
+	watcher.game_arena.set_camera_owner(0)
 	for client in clients:
 		for state in client.network.session.characters:
 			if client.game_arena.character_views[state.entity_id].position.distance_to(state.position) > 1.0: return "A rendered character did not converge to the shared position."
@@ -86,7 +100,7 @@ func _check() -> String:
 	old_world.kind = GameProtocol.MessageKind.WORLD_STATE
 	old_world.session = initial
 	first.network._receive_message(old_world)
-	if _position(first, 1).x == 144: return "An old world packet teleported a character back to spawn."
+	if _position(first, 1).x == spawn_one.x: return "An old world packet teleported a character back to spawn."
 	# Reliable membership and unreliable positions can cross in transit.
 	var current_position := _position(first, 1)
 	var delayed_session := GameProtocol.DecodedMessage.new()
@@ -133,16 +147,17 @@ func _check() -> String:
 	if first.network.session.characters[0].entity_id <= first_id: return "Runtime entity IDs were reused."
 	_key(first, KEY_W, true)
 	_key(second, KEY_RIGHT, true)
-	await create_timer(1.2).timeout
+	await create_timer(2.5).timeout
 	_key(first, KEY_W, false)
 	_key(second, KEY_RIGHT, false)
 	await create_timer(0.18).timeout
 	if not await _wait_for(_positions_converged): return "Collision positions did not converge."
-	if _position(first, 1).y < 140 or _position(first, 1).y >= 143 or _position(first, 2).x > 596 or _position(first, 2).x <= 593: return "The host allowed crossing water/stone or blocked movement too early."
+	if _position(first, 1).y < 364 or _position(first, 1).y >= 367 or _position(first, 2).x > 1844 or _position(first, 2).x <= 1841: return "The host allowed crossing cliffs/forest or blocked movement too early."
 	var arena = first.game_arena.world.definition
-	var diagonal := Movement.move(Vector2(144, 240), 10, 12, arena, first.content.arena_catalog)
-	if absf(diagonal.distance_to(Vector2(144, 240)) - 3.0) > 0.001: return "Client diagonal movement is faster than cardinal movement."
-	if Movement.move(Vector2(144, 141), 4, 12, arena, first.content.arena_catalog) != Vector2(144, 141): return "Client prediction disagrees with host water collision."
+	var diagonal := Movement.move(spawn_one, 10, 12, arena, first.content.arena_catalog)
+	if absf(diagonal.distance_to(spawn_one) - 3.0) > 0.001: return "Client diagonal movement is faster than cardinal movement."
+	var cliff_stop := Vector2(spawn_one.x, 364)
+	if Movement.move(cliff_stop, 4, 12, arena, first.content.arena_catalog) != cliff_stop: return "Client prediction disagrees with host cliff collision."
 	second.network.disconnect_from_host()
 	if not await _wait_for(func(): return first.network.session.phase == SessionSnapshot.Phase.LOBBY and watcher.lobby.visible): return "Fighter departure did not clear live characters and return the audience to lobby."
 	print("Countdown elapsed: %d ms; two independently controlled characters converged across five clients." % elapsed)
@@ -185,13 +200,13 @@ func _key(client: Node, key: int, pressed: bool) -> void:
 
 
 func _check_wire() -> String:
-	var bytes := PackedByteArray([79, 71, 65, 65, 5, 11, 1, 2, 3, 4, 5, 6, 7, 8, 2,
+	var bytes := PackedByteArray([79, 71, 65, 65, 6, 11, 1, 2, 3, 4, 5, 6, 7, 8, 2,
 		1, 0, 0, 0, 3, 0, 1, 0, 144, 0, 0, 0, 240, 0, 0, 9, 10, 11, 12, 6,
 		2, 0, 0, 0, 4, 0, 2, 0, 240, 1, 0, 0, 240, 0, 0, 0, 0, 0, 0, 0])
 	var decoded := GameProtocol.decode(bytes, 1)
 	if not decoded.error_title.is_empty() or decoded.session.round_id != 0x04030201 or decoded.session.server_tick != 0x08070605 or decoded.session.characters[0].position != Vector2(144, 240) or decoded.session.characters[1].position != Vector2(496, 240) or decoded.session.characters[0].applied_input_sequence != 0x0c0b0a09: return "World-state fixture differs from Odin."
 	var input := GameProtocol.encode_input(0x04030201, 0x0c0b0a09, 6)
-	if input != PackedByteArray([79, 71, 65, 65, 5, 10, 1, 2, 3, 4, 9, 10, 11, 12, 6]): return "Input fixture differs from Odin."
+	if input != PackedByteArray([79, 71, 65, 65, 6, 10, 1, 2, 3, 4, 9, 10, 11, 12, 6]): return "Input fixture differs from Odin."
 	for length in bytes.size():
 		if GameProtocol.decode(bytes.slice(0, length), 1).error_title.is_empty(): return "Truncated world packet was accepted."
 	for edit in [[14, 1], [15, 0], [19, 0], [21, 0], [34, 16], [35, 1], [41, 1]]:

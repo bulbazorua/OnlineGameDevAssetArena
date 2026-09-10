@@ -4,6 +4,8 @@
     {"id": 1, "key": "circle", "display_name": "Circle", "footprint_radius": 12},
     {"id": 2, "key": "square", "display_name": "Square", "footprint_radius": 12},
     {"id": 3, "key": "triangle", "display_name": "Triangle", "footprint_radius": 12},
-    {"id": 4, "key": "diamond", "display_name": "Diamond", "footprint_radius": 12}
+    {"id": 4, "key": "diamond", "display_name": "Diamond", "footprint_radius": 12},
+    {"id": 5, "key": "archer", "display_name": "Archer", "footprint_radius": 12},
+    {"id": 6, "key": "orc", "display_name": "Orc", "footprint_radius": 12}
   ]
 }

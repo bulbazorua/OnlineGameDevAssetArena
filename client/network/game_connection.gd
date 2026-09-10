@@ -17,6 +17,7 @@ const MAX_EVENTS_PER_FRAME := 32
 var content: GameContent
 var connection_state := ConnectionState.DISCONNECTED
 var player_id := 0
+var audience_delay_ms := 0
 var session: SessionSnapshot
 var status_message := "Disconnected"
 var status_detail := "Use 127.0.0.1 for a host running on this computer."
@@ -58,6 +59,13 @@ func connect_to_host(address: String, port: int, wants_audience := false) -> voi
 
 func disconnect_from_host() -> void:
 	_close_connection("Disconnected", "You can connect again when ready.")
+
+
+func get_ping_ms() -> int:
+	# ENet's smoothed reliable-packet RTT; -1 means no connected host.
+	if connection_state != ConnectionState.CONNECTED or server_peer == null or not server_peer.is_active() or server_peer.get_state() != ENetPacketPeer.STATE_CONNECTED:
+		return -1
+	return roundi(server_peer.get_statistic(ENetPacketPeer.PEER_ROUND_TRIP_TIME))
 
 
 func _process(_delta: float) -> void:
@@ -108,9 +116,10 @@ func _receive_message(message: GameProtocol.DecodedMessage) -> void:
 				_close_connection("Invalid player ID", "The host sent an unexpected player identity.", true)
 				return
 			player_id = message.player_id
+			audience_delay_ms = message.audience_delay_ms
 			connection_state = ConnectionState.CONNECTED
 			if player_id == 0:
-				_set_status("Connected — Audience", "You are watching. Reconnect to request an open player slot.")
+				_set_status("Connected — Audience", "%s. Waiting for the spectator feed." % audience_timeline_label())
 			else:
 				_set_status("Connected — Player %d" % player_id, "Start character selection when both players are connected.")
 		GameProtocol.MessageKind.SESSION_STATE:
@@ -139,7 +148,10 @@ func _receive_message(message: GameProtocol.DecodedMessage) -> void:
 			if session != null and session.phase == SessionSnapshot.Phase.IN_ARENA and message.session.phase == session.phase and session.round_id == message.session.round_id and GameProtocol.serial_is_newer(session.server_tick, message.session.server_tick):
 				message.session = message.session.with_world(session)
 			# Replace the snapshot; screens only read the published state.
+			var first_state := session == null
 			session = message.session
+			if first_state and player_id == 0:
+				_set_status("Connected — Audience", "%s. Camera controls remain immediate." % audience_timeline_label())
 			session_changed.emit(session)
 
 		GameProtocol.MessageKind.WORLD_STATE:
@@ -197,6 +209,7 @@ func _close_connection(message: String, detail: String, is_error := false) -> vo
 	_release_connection()
 	connection_state = ConnectionState.DISCONNECTED
 	player_id = 0
+	audience_delay_ms = 0
 	session = null
 	_set_status(message, detail, is_error)
 	session_changed.emit(null)
@@ -250,3 +263,7 @@ func _positions_valid(snapshot: SessionSnapshot, map_id: int) -> bool:
 		if character.position.x < radius - 0.004 or character.position.y < radius - 0.004 or character.position.x > arena.width * arena.tile_size - radius + 0.004 or character.position.y > arena.height * arena.tile_size - radius + 0.004:
 			return false
 	return true
+
+
+func audience_timeline_label() -> String:
+	return "Live audience view" if audience_delay_ms == 0 else "Audience delayed %s s" % ("%.3f" % (audience_delay_ms / 1000.0)).trim_suffix("0").trim_suffix("0").trim_suffix("0").trim_suffix(".")

@@ -5,3 +5,4 @@ extends Resource
 enum PlaceholderKind { CIRCLE, SQUARE, TRIANGLE, DIAMOND }
 @export var character_id: int
 @export var placeholder_kind := PlaceholderKind.CIRCLE
+@export var tint := Color.WHITE

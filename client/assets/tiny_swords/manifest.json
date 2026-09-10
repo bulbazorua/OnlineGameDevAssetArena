@@ -1,0 +1,118 @@
+{
+  "schema_version": 1,
+  "pack": "tiny_swords_free",
+  "author": "Pixel Frog",
+  "source_url": "https://pixelfrog-assets.itch.io/tiny-swords",
+  "license_kind": "publisher_terms_no_raw_redistribution",
+  "native_tile_pixels": 64,
+  "files": [
+    {
+      "path": "Terrain/Tileset/Tilemap_color2.png",
+      "sha256": "b20650ee20c77dce8eb29c2ecb9822ce144367ddfbc6f9f69b18945596424a36",
+      "width": 576,
+      "height": 384
+    },
+    {
+      "path": "Terrain/Tileset/Tilemap_color3.png",
+      "sha256": "558588391e6dd91c444e6a0ce4b2f8ee0ee13e50baeb8289837a42e58b2c8f1a",
+      "width": 576,
+      "height": 384
+    },
+    {
+      "path": "Terrain/Tileset/Tilemap_color5.png",
+      "sha256": "327ac5a34d6210fbebe71db19b1be91e41950ea2ad370c4e19bb243d57e3c80b",
+      "width": 576,
+      "height": 384
+    },
+    {
+      "path": "Terrain/Tileset/Water Background color.png",
+      "sha256": "5ef30a00bbff22590eabb5acabb8aca6cc415557e7ab5f60db07714f01a4dba1",
+      "width": 64,
+      "height": 64
+    },
+    {
+      "path": "Terrain/Decorations/Bushes/Bushe1.png",
+      "sha256": "38ea6583e856d4670ce43b843aaa3ef3e675b351b02353118f04b01ba3daa4eb",
+      "width": 1024,
+      "height": 128
+    },
+    {
+      "path": "Terrain/Decorations/Bushes/Bushe2.png",
+      "sha256": "34b4312fe94ec9e8783e8782cfda26c172878155f5002727c53bc77f9a3a4ad6",
+      "width": 1024,
+      "height": 128
+    },
+    {
+      "path": "Terrain/Decorations/Rocks/Rock1.png",
+      "sha256": "de9f1d954577003e278bae7ee71338c76b4799c9aabf34a002219ca2c67c7c00",
+      "width": 64,
+      "height": 64
+    },
+    {
+      "path": "Buildings/Blue Buildings/Castle.png",
+      "sha256": "a4ec9de93fbe416359043cc6b58a32119b08c7623ef2e09b3aef9d3adf439c1b",
+      "width": 320,
+      "height": 256
+    },
+    {
+      "path": "Buildings/Blue Buildings/Archery.png",
+      "sha256": "04880ff5af0965f66777e87d4229782f2090233da79f08170cf9240eda3881d9",
+      "width": 192,
+      "height": 256
+    },
+    {
+      "path": "Buildings/Blue Buildings/Barracks.png",
+      "sha256": "8d4658300cbab598ad9a18855c48305935a95870259bbcf8d25bf2ab00f613b4",
+      "width": 192,
+      "height": 256
+    },
+    {
+      "path": "Buildings/Blue Buildings/House1.png",
+      "sha256": "f68fbce236ca663e2c1d86484f4617586bc99f4f9b634c493e62fa7eeece5c63",
+      "width": 128,
+      "height": 192
+    },
+    {
+      "path": "Buildings/Blue Buildings/House2.png",
+      "sha256": "21e35d4d47e778c996cc56d95170908f663ca8858f08a6f8637fa15c1236448f",
+      "width": 128,
+      "height": 192
+    },
+    {
+      "path": "Buildings/Blue Buildings/House3.png",
+      "sha256": "e2be60c4202ceffb55a6d06851ab6b08ffb530867e64da19ae578b09d18097fd",
+      "width": 128,
+      "height": 192
+    },
+    {
+      "path": "Buildings/Blue Buildings/Monastery.png",
+      "sha256": "19ceee020215c572f9365f27ee5bd35cd52e17f796d81b082f16206e0ea7da5c",
+      "width": 192,
+      "height": 320
+    },
+    {
+      "path": "Buildings/Blue Buildings/Tower.png",
+      "sha256": "ac0f01128d951c9da4cfe811af175a35868b6d91cdda04fabbe9dcf909caf868",
+      "width": 128,
+      "height": 256
+    },
+    {
+      "path": "Buildings/Red Buildings/Castle.png",
+      "sha256": "8a78ece6e3fd7939b259aa8431b20993a096a769878757a76cd24005d245a78f",
+      "width": 320,
+      "height": 256
+    },
+    {
+      "path": "Buildings/Red Buildings/Tower.png",
+      "sha256": "58bcd35d471bbbf2e219036234a9d1837c0240e1dcfcb4b78876819cb5134233",
+      "width": 128,
+      "height": 256
+    },
+    {
+      "path": "Buildings/Red Buildings/House1.png",
+      "sha256": "c72282dfe66f511e485b433ca4dc92cd5579cbf52809abd2a3a594833b91e8b6",
+      "width": 128,
+      "height": 192
+    }
+  ]
+}

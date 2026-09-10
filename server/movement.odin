@@ -35,9 +35,9 @@ character_move :: proc(position: [2]f32, mask: u8, radius: f32, arena: ^Arena_De
     result := position
     // Axis separation lets characters slide along walls.
     candidate := result + [2]f32{delta.x, 0}
-    if arena_position_is_clear(arena, content, candidate, radius) { result = candidate }
+    if arena_position_is_clear(arena, content, candidate, radius) && arena_step_is_allowed(arena, content, result, candidate) { result = candidate }
     candidate = result + [2]f32{0, delta.y}
-    if arena_position_is_clear(arena, content, candidate, radius) { result = candidate }
+    if arena_position_is_clear(arena, content, candidate, radius) && arena_step_is_allowed(arena, content, result, candidate) { result = candidate }
     return result
 }
 
@@ -48,17 +48,7 @@ session_tick :: proc(session: ^Session, content: ^Game_Content) -> (session_chan
         previous := session_countdown_seconds(session)
         session.countdown_ticks -= 1
         if session.countdown_ticks == 0 {
-            arena := content_arena(content, session.map_id)
-            for player, index in session.players {
-                session.next_entity_id += 1
-                if session.next_entity_id == 0 { session.next_entity_id += 1 }
-                session.characters[index] = Character{
-                    entity_id = session.next_entity_id, definition_id = player.character_id,
-                    owner_id = u8(index + 1), position = arena_cell_center(arena, arena.spawns[index]),
-                }
-            }
-            session.character_count = MAX_PLAYERS
-            session.phase = .In_Arena
+            session_enter_arena(session, content)
         }
         if session_countdown_seconds(session) != previous {
             session.revision += 1
@@ -78,4 +68,23 @@ session_tick :: proc(session: ^Session, content: ^Game_Content) -> (session_chan
         }
     }
     return false
+}
+
+// Both normal countdown and development scenarios enter through this path.
+session_enter_arena :: proc(session: ^Session, content: ^Game_Content) {
+    assert(session_player_mask(session) == 3)
+    arena := content_arena(content, session.map_id)
+    assert(arena != nil)
+    for player, index in session.players {
+        assert(player.ready && content_character(content, player.character_id) != nil)
+        session.next_entity_id += 1
+        if session.next_entity_id == 0 { session.next_entity_id += 1 }
+        session.characters[index] = Character{
+            entity_id = session.next_entity_id, definition_id = player.character_id,
+            owner_id = u8(index + 1), position = arena_cell_center(arena, arena.spawns[index]),
+        }
+    }
+    session.countdown_ticks = 0
+    session.character_count = MAX_PLAYERS
+    session.phase = .In_Arena
 }

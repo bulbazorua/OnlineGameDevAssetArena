@@ -2,7 +2,7 @@ package main
 
 import "core:math"
 
-PROTOCOL_HEADER :: [5]u8{'O', 'G', 'A', 'A', 5}
+PROTOCOL_HEADER :: [5]u8{'O', 'G', 'A', 'A', 6}
 Message_Kind :: enum u8 {
     Hello = 1, Welcome = 2, Session_State = 3,
     Start_Selection = 4, Select_Character = 5, Set_Ready = 6,
@@ -76,7 +76,12 @@ protocol_decode :: proc(payload: []u8, channel: u8) -> (command: Client_Command,
     return command, true
 }
 
-protocol_encode_welcome :: proc(player_id: u8) -> [7]u8 { return {'O', 'G', 'A', 'A', 5, u8(Message_Kind.Welcome), player_id} }
+protocol_encode_welcome :: proc(player_id: u8, audience_delay_ms: u32 = 0) -> (result: [11]u8) {
+    protocol_header(result[:], .Welcome)
+    result[6] = player_id
+    protocol_write_u32(result[7:], audience_delay_ms)
+    return
+}
 
 protocol_encode_session :: proc(session: ^Session) -> (result: [72]u8) {
     protocol_header(result[:], .Session_State)

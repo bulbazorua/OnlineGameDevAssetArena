@@ -22,7 +22,7 @@ content_destroy :: proc(content: ^Game_Content) {
     }
     delete(content.characters)
     for terrain in content.terrains { delete(terrain.key); delete(terrain.display_name) }
-    for arena in content.arenas { delete(arena.key); delete(arena.display_name); delete(arena.cells) }
+    for arena in content.arenas { delete(arena.key); delete(arena.display_name); delete(arena.cells); delete(arena.elevations) }
     delete(content.terrains)
     delete(content.arenas)
     content^ = {}
@@ -80,7 +80,7 @@ content_parse_extra :: proc(content: ^Game_Content, data: []u8, kind: Content_Ki
     root, root_ok := value.(json.Object)
     if !root_ok { return false }
     schema, schema_ok := content_integer(root["schema_version"])
-    if !schema_ok || schema != 1 { return false }
+    if !schema_ok || !(schema == 1 || kind == .Arenas && schema == 2) { return false }
     switch kind {
     case .Terrains: return content_parse_terrains(content, root)
     case .Arenas: return content_parse_arenas(content, root)

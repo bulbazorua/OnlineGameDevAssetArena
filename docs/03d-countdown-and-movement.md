@@ -1,5 +1,7 @@
 # Checkpoint 3D: countdown, arena entry, and movement
 
+Historical checkpoint: [checkpoint 3G](03g-land-arenas.md) expands the maps, updates spawn positions, adds stair/elevation rules, and replaces the default player overview with a follow camera. Countdown and network replication remain as described here.
+
 Implemented and verified locally. This user-requested checkpoint combines arena entry with the first authoritative movement slice. It does not add combat, AI, or terrain bonuses.
 
 ## Match flow

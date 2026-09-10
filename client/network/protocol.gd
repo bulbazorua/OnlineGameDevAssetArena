@@ -4,7 +4,7 @@ extends RefCounted
 const SessionSnapshot = preload("res://session/session_snapshot.gd")
 enum MessageKind { HELLO = 1, WELCOME = 2, SESSION_STATE = 3, START_SELECTION = 4, SELECT_CHARACTER = 5, SET_READY = 6, RETURN_TO_LOBBY = 7, COMMAND_REJECTED = 8, SELECT_ARENA = 9, INPUT = 10, WORLD_STATE = 11 }
 enum CommandRejectReason { NONE, AUDIENCE_READ_ONLY, WRONG_PHASE, STALE_ROUND, UNKNOWN_CHARACTER, SELECTION_CHANGED, NEED_TWO_PLAYERS, UNKNOWN_ARENA, ARENA_CHANGED }
-const HEADER := [79, 71, 65, 65, 5]
+const HEADER := [79, 71, 65, 65, 6]
 const REJECT_PROTOCOL := 1
 const REJECT_CONTENT := 2
 
@@ -12,6 +12,7 @@ class DecodedMessage:
 	extends RefCounted
 	var kind := 0
 	var player_id := 0
+	var audience_delay_ms := 0
 	var session: SessionSnapshot
 	var round_id := 0
 	var rejected_kind := 0
@@ -62,9 +63,12 @@ static func decode(packet: PackedByteArray, channel: int) -> DecodedMessage:
 	message.kind = packet[5]
 	match message.kind:
 		MessageKind.WELCOME:
-			if packet.size() != 7 or packet[6] > 2:
+			if packet.size() != 11 or packet[6] > 2:
 				return _invalid("The host sent an invalid player identity.")
 			message.player_id = packet[6]
+			message.audience_delay_ms = _read_integer(packet, 7, 4)
+			if message.audience_delay_ms > 60000 or (message.player_id > 0 and message.audience_delay_ms != 0):
+				return _invalid("The host sent an invalid audience delay.")
 		MessageKind.SESSION_STATE:
 			if packet.size() < 32 or packet[14] > SessionSnapshot.Phase.IN_ARENA or packet[15] > 3 or packet[31] not in [0, 2] or packet.size() != 32 + packet[31] * 20:
 				return _invalid("The host sent an invalid session state.")

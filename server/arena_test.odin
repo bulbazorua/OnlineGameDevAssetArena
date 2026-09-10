@@ -83,10 +83,10 @@ arena_selection_authority_and_ready_invalidation :: proc(t: ^testing.T) {
 
 @(test)
 arena_command_wire_fixtures :: proc(t: ^testing.T) {
-    request := [12]u8{'O', 'G', 'A', 'A', 5, 9, 1, 2, 3, 4, 2, 0}
+    request := [12]u8{'O', 'G', 'A', 'A', 6, 9, 1, 2, 3, 4, 2, 0}
     command, valid := protocol_decode(request[:], 0)
     testing.expect(t, valid && command.kind == .Select_Arena && command.round_id == 0x04030201 && command.map_id == 2)
-    ready := [15]u8{'O', 'G', 'A', 'A', 5, 6, 1, 2, 3, 4, 4, 0, 2, 0, 1}
+    ready := [15]u8{'O', 'G', 'A', 'A', 6, 6, 1, 2, 3, 4, 4, 0, 2, 0, 1}
     command, valid = protocol_decode(ready[:], 0)
     testing.expect(t, valid && command.kind == .Set_Ready && command.character_id == 4 && command.map_id == 2 && command.ready)
     for length in 0..<len(ready) {

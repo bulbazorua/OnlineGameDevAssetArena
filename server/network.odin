@@ -13,6 +13,8 @@ Client :: struct {
     connected_at: time.Tick,
     welcomed: bool,
     player_id: u8,
+    audience_seeded: bool,
+    audience_revision: u32,
 }
 
 Network_Host :: struct {
@@ -21,9 +23,11 @@ Network_Host :: struct {
     session: ^Session,
     content: ^Game_Content,
     session_dirty: bool,
+    audience: Audience_Stream,
+    started_at: time.Tick,
 }
 
-network_open :: proc(bind: string, port: u16, session: ^Session, content: ^Game_Content) -> (Network_Host, bool) {
+network_open :: proc(bind: string, port: u16, session: ^Session, content: ^Game_Content, audience_delay_ms: u32 = DEFAULT_AUDIENCE_DELAY_MS) -> (Network_Host, bool) {
     if port == 0 {
         fmt.eprintln("[host] Port must be between 1 and 65535.")
         return {}, false
@@ -49,12 +53,15 @@ network_open :: proc(bind: string, port: u16, session: ^Session, content: ^Game_
     host.maximumPacketSize = 128
     host.maximumWaitingData = 4096
     fmt.printfln("[host] Listening on %s:%d (2 fighters, up to %d total connections)", bind, port, MAX_CONNECTIONS)
-    return Network_Host{host = host, clients = make([]Client, MAX_CONNECTIONS), session = session, content = content}, true
+    fmt.printfln("[host] Audience delay: %.3f seconds.", f64(audience_delay_ms) / 1000)
+    return Network_Host{host = host, clients = make([]Client, MAX_CONNECTIONS), session = session, content = content,
+        audience = audience_init(audience_delay_ms), started_at = time.tick_now()}, true
 }
 
 network_close :: proc(network: ^Network_Host) {
     enet.host_destroy(network.host)
     delete(network.clients)
+    audience_destroy(&network.audience)
     enet.deinitialize()
     network^ = {}
 }
@@ -116,12 +123,11 @@ network_receive :: proc(network: ^Network_Host, client: ^Client, event: ^enet.Ev
             network.session_dirty = true
             fmt.printfln("[host] Joined as role %d (0 = audience).", client.player_id)
         }
-        welcome := protocol_encode_welcome(client.player_id)
+        delay_ms: u32
+        if client.player_id == 0 { delay_ms = network.audience.delay_ms }
+        welcome := protocol_encode_welcome(client.player_id, delay_ms)
         if !network_send(network, client, welcome[:]) { return }
-        if !joining {
-            state := protocol_encode_session(network.session)
-            network_send(network, client, state[:protocol_session_size(network.session)])
-        }
+        if !joining || client.player_id == 0 { network_send_client_session(network, client) }
     } else {
         if !client.welcomed {
             network_drop(network, client, u32(Reject_Reason.Protocol))
@@ -129,13 +135,17 @@ network_receive :: proc(network: ^Network_Host, client: ^Client, event: ^enet.Ev
         }
         changed, rejection := session_apply(network.session, network.content, client.player_id, command)
         if rejection != .None {
-            reply := protocol_encode_rejection(network.session.round_id, command.kind, rejection)
+            round_id := network.session.round_id
+            if client.player_id == 0 && network.audience.delay_ms > 0 {
+                round_id = 0
+                if network.audience.has_latest { round_id = network.audience.latest.round_id }
+            }
+            reply := protocol_encode_rejection(round_id, command.kind, rejection)
             network_send(network, client, reply[:])
         } else if changed {
             network.session_dirty = true
         } else if command.kind != .Input {
-            state := protocol_encode_session(network.session)
-            network_send(network, client, state[:protocol_session_size(network.session)])
+            network_send_client_session(network, client)
         }
     }
     enet.host_flush(network.host)
@@ -146,7 +156,7 @@ network_publish_session :: proc(network: ^Network_Host) {
     roster := protocol_encode_session(network.session)
     roster_size := protocol_session_size(network.session)
     for &client in network.clients {
-        if client.welcomed {
+        if client.welcomed && (client.player_id > 0 || network.audience.delay_ms == 0) {
             network_send(network, &client, roster[:roster_size])
         }
     }
@@ -188,7 +198,42 @@ network_publish_world :: proc(network: ^Network_Host) {
     if network.session.phase != .In_Arena { return }
     state := protocol_encode_world(network.session)
     for &client in network.clients {
-        if client.welcomed { network_send(network, &client, state[:], 1) }
+        if client.welcomed && (client.player_id > 0 || network.audience.delay_ms == 0) { network_send(network, &client, state[:], 1) }
+    }
+    enet.host_flush(network.host)
+}
+
+// All direct state replies use the connection's permitted timeline. Repeating
+// Hello or reconnecting must never fall back to the live fighter state.
+network_send_client_session :: proc(network: ^Network_Host, client: ^Client) {
+    state := network.session
+    if client.player_id == 0 && network.audience.delay_ms > 0 {
+        if !network.audience.has_latest { return }
+        state = &network.audience.latest
+    }
+    bytes := protocol_encode_session(state)
+    if network_send(network, client, bytes[:protocol_session_size(state)]) {
+        client.audience_seeded = true
+        client.audience_revision = state.revision
+    }
+}
+
+network_publish_audience :: proc(network: ^Network_Host) {
+    if !audience_advance(&network.audience, network.session, time.tick_since(network.started_at)) { return }
+    state := &network.audience.latest
+    roster := protocol_encode_session(state)
+    world: [55]u8
+    if state.phase == .In_Arena { world = protocol_encode_world(state) }
+    for &client in network.clients {
+        if !client.welcomed || client.player_id != 0 { continue }
+        if !client.audience_seeded || client.audience_revision != state.revision {
+            if network_send(network, &client, roster[:protocol_session_size(state)]) {
+                client.audience_seeded = true
+                client.audience_revision = state.revision
+            }
+        } else if state.phase == .In_Arena {
+            network_send(network, &client, world[:], 1)
+        }
     }
     enet.host_flush(network.host)
 }

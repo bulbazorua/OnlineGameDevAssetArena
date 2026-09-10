@@ -1,0 +1,107 @@
+{
+  "schema_version": 1,
+  "arenas": [
+    {
+      "id": 1,
+      "key": "meadow_crossing",
+      "display_name": "Meadow Crossing",
+      "width": 20,
+      "height": 14,
+      "tile_size": 32,
+      "rows": [
+        "####################",
+        "#........gg........#",
+        "#.swwws..gg........#",
+        "#.swwws..gg#.......#",
+        "#.sssss..gg#.......#",
+        "#........gg........#",
+        "#gggggggggggggggggg#",
+        "#gggggggggggggggggg#",
+        "#........gg........#",
+        "#.......#gg..ssss..#",
+        "#.......#gg..swws..#",
+        "#........gg..swws..#",
+        "#........gg........#",
+        "####################"
+      ],
+      "spawns": [
+        [
+          4,
+          7
+        ],
+        [
+          15,
+          7
+        ]
+      ]
+    },
+    {
+      "id": 2,
+      "key": "sandbar",
+      "display_name": "Sandbar",
+      "width": 20,
+      "height": 14,
+      "tile_size": 32,
+      "rows": [
+        "wwwwwwwwwwwwwwwwwwww",
+        "wwwwwwwwwwwwwwwwwwww",
+        "wwwwwwwwwwwwwwwwwwww",
+        "wssssssss##ssssssssw",
+        "wssssssss##ssssssssw",
+        "ws......ssss......sw",
+        "wggggggggggggggggggw",
+        "wggggggggggggggggggw",
+        "ws......s##s......sw",
+        "wssssssss##ssssssssw",
+        "wssssssss##ssssssssw",
+        "wwwwwwwwwwwwwwwwwwww",
+        "wwwwwwwwwwwwwwwwwwww",
+        "wwwwwwwwwwwwwwwwwwww"
+      ],
+      "spawns": [
+        [
+          4,
+          7
+        ],
+        [
+          15,
+          7
+        ]
+      ]
+    },
+    {
+      "id": 3,
+      "key": "stone_garden",
+      "display_name": "Stone Garden",
+      "width": 20,
+      "height": 14,
+      "tile_size": 32,
+      "rows": [
+        "####################",
+        "#gggggggggggggggggg#",
+        "#g......g##gswwwsgg#",
+        "#g.##...g##gswwwsgg#",
+        "#g......g##gsssssgg#",
+        "#g......g##gggggggg#",
+        "#gggggggggggggggggg#",
+        "#gggggggggggggggggg#",
+        "#gggggggg##g......g#",
+        "#gsssssgg##g......g#",
+        "#gswwwsgg##g...##.g#",
+        "#gswwwsgg##g......g#",
+        "#gggggggggggggggggg#",
+        "####################"
+      ],
+      "spawns": [
+        [
+          4,
+          7
+        ],
+        [
+          15,
+          7
+        ]
+      ]
+    }
+  ]
+}

@@ -14,6 +14,8 @@ var _content: GameContent
 func _ready() -> void:
 	clip_contents = true
 	world = WORLD_SCENE.instantiate()
+	# Lift the world's two ground layers above the surrounding UI backdrop.
+	world.z_index = 2
 	add_child(world)
 	resized.connect(_fit_map)
 	mouse_exited.connect(func(): world.highlight_cell(Vector2i(-1, -1)))

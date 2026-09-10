@@ -1,0 +1,198 @@
+{
+  "schema_version": 1,
+  "terrain_theme": "tiny_swords",
+  "props": [
+    {
+      "key": "west_castle",
+      "texture": "res://assets/tiny_swords/Buildings/Blue Buildings/Castle.png",
+      "reference_span_px": 320,
+      "gameplay_size": 5,
+      "foot_anchor_px": [
+        160.0,
+        240
+      ],
+      "footprint_cells": [
+        6,
+        8,
+        5,
+        2
+      ]
+    },
+    {
+      "key": "east_castle",
+      "texture": "res://assets/tiny_swords/Buildings/Red Buildings/Castle.png",
+      "reference_span_px": 320,
+      "gameplay_size": 5,
+      "foot_anchor_px": [
+        160.0,
+        240
+      ],
+      "footprint_cells": [
+        49,
+        8,
+        5,
+        2
+      ]
+    },
+    {
+      "key": "barracks",
+      "texture": "res://assets/tiny_swords/Buildings/Blue Buildings/Barracks.png",
+      "reference_span_px": 192,
+      "gameplay_size": 3,
+      "foot_anchor_px": [
+        96.0,
+        240
+      ],
+      "footprint_cells": [
+        18,
+        8,
+        3,
+        2
+      ]
+    },
+    {
+      "key": "archery",
+      "texture": "res://assets/tiny_swords/Buildings/Blue Buildings/Archery.png",
+      "reference_span_px": 192,
+      "gameplay_size": 3,
+      "foot_anchor_px": [
+        96.0,
+        240
+      ],
+      "footprint_cells": [
+        39,
+        8,
+        3,
+        2
+      ]
+    },
+    {
+      "key": "monastery",
+      "texture": "res://assets/tiny_swords/Buildings/Blue Buildings/Monastery.png",
+      "reference_span_px": 192,
+      "gameplay_size": 3,
+      "foot_anchor_px": [
+        96.0,
+        304
+      ],
+      "footprint_cells": [
+        29,
+        23,
+        3,
+        2
+      ]
+    },
+    {
+      "key": "west_home",
+      "texture": "res://assets/tiny_swords/Buildings/Blue Buildings/House1.png",
+      "reference_span_px": 128,
+      "gameplay_size": 2,
+      "foot_anchor_px": [
+        64.0,
+        176
+      ],
+      "footprint_cells": [
+        5,
+        22,
+        2,
+        1
+      ]
+    },
+    {
+      "key": "west_home_two",
+      "texture": "res://assets/tiny_swords/Buildings/Blue Buildings/House2.png",
+      "reference_span_px": 128,
+      "gameplay_size": 2,
+      "foot_anchor_px": [
+        64.0,
+        176
+      ],
+      "footprint_cells": [
+        9,
+        24,
+        2,
+        1
+      ]
+    },
+    {
+      "key": "east_home",
+      "texture": "res://assets/tiny_swords/Buildings/Red Buildings/House1.png",
+      "reference_span_px": 128,
+      "gameplay_size": 2,
+      "foot_anchor_px": [
+        64.0,
+        176
+      ],
+      "footprint_cells": [
+        48,
+        22,
+        2,
+        1
+      ]
+    },
+    {
+      "key": "east_home_three",
+      "texture": "res://assets/tiny_swords/Buildings/Blue Buildings/House3.png",
+      "reference_span_px": 128,
+      "gameplay_size": 2,
+      "foot_anchor_px": [
+        64.0,
+        176
+      ],
+      "footprint_cells": [
+        52,
+        24,
+        2,
+        1
+      ]
+    },
+    {
+      "key": "central_home",
+      "texture": "res://assets/tiny_swords/Buildings/Blue Buildings/House3.png",
+      "reference_span_px": 128,
+      "gameplay_size": 2,
+      "foot_anchor_px": [
+        64.0,
+        176
+      ],
+      "footprint_cells": [
+        23,
+        22,
+        2,
+        1
+      ]
+    },
+    {
+      "key": "west_tower",
+      "texture": "res://assets/tiny_swords/Buildings/Blue Buildings/Tower.png",
+      "reference_span_px": 128,
+      "gameplay_size": 2,
+      "foot_anchor_px": [
+        64.0,
+        240
+      ],
+      "footprint_cells": [
+        3,
+        8,
+        2,
+        1
+      ]
+    },
+    {
+      "key": "east_tower",
+      "texture": "res://assets/tiny_swords/Buildings/Red Buildings/Tower.png",
+      "reference_span_px": 128,
+      "gameplay_size": 2,
+      "foot_anchor_px": [
+        64.0,
+        240
+      ],
+      "footprint_cells": [
+        55,
+        8,
+        2,
+        1
+      ]
+    }
+  ]
+}

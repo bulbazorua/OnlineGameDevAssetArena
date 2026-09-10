@@ -1,5 +1,7 @@
 # Checkpoint 3C: arena selection and typed terrain
 
+Historical checkpoint: current map sizes, art, terrain types, and elevation are described in [checkpoint 3G](03g-land-arenas.md).
+
 Implemented and verified locally. This checkpoint adds three selectable top-down maps and shared terrain metadata. It does not add movement, combat, AI, or terrain effects.
 
 ## Selection flow

@@ -9,6 +9,7 @@ const GameProtocol = preload("res://network/protocol.gd")
 const GameConnection = preload("res://network/game_connection.gd")
 const LobbyScreen = preload("res://ui/lobby_screen.gd")
 const SessionSnapshot = preload("res://session/session_snapshot.gd")
+const DEBUG_OVERLAY_SCENE = preload("res://ui/debug_overlay.tscn")
 
 @onready var game_arena: GameArena = $GameArena
 @onready var network: GameConnection = $GameConnection
@@ -20,6 +21,11 @@ var _viewing_arena := false
 
 
 func _ready() -> void:
+	# Explicit opt-in; even --dev cannot enable this in a release export.
+	if OS.is_debug_build() and "--dev" in OS.get_cmdline_user_args():
+		var overlay = DEBUG_OVERLAY_SCENE.instantiate()
+		add_child(overlay)
+		overlay.configure(network)
 	network.connection_changed.connect(_display_connection)
 	network.session_changed.connect(_display_session)
 	network.world_changed.connect(game_arena.apply_world)
@@ -55,6 +61,10 @@ func _ready() -> void:
 				network.connect_to_host(lobby.host_input.text, 0)
 				return
 			lobby.port_input.value = int(value)
+	if OS.is_debug_build() and "--dev" in OS.get_cmdline_user_args():
+		var reload_controller = load("res://dev/reload_controller.gd").new()
+		add_child(reload_controller)
+		reload_controller.configure(self)
 	lobby.request_connection()
 
 
@@ -75,6 +85,9 @@ func _display_session(snapshot: SessionSnapshot) -> void:
 	arena_selection.visible = selecting and _viewing_arena
 	selection.display_session(snapshot, network.player_id)
 	arena_selection.display_session(snapshot, network.player_id)
+	if network.player_id == 0 and snapshot != null:
+		selection.role_label.text += " · " + network.audience_timeline_label()
+		arena_selection.get_node("%RoleLabel").text += " · " + network.audience_timeline_label()
 
 
 func _display_rejection(reason: int) -> void:

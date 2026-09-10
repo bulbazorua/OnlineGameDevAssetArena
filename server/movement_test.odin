@@ -34,7 +34,8 @@ countdown_spawns_once_and_reset_invalidates_input :: proc(t: ^testing.T) {
         }
     }
     testing.expect(t, session.server_tick == 300 && session.phase == .In_Arena && session.character_count == 2)
-    testing.expect(t, session.characters[0].position == [2]f32{144, 240} && session.characters[1].position == [2]f32{496, 240})
+    arena := content_arena(&content, session.map_id)
+    testing.expect(t, session.characters[0].position == arena_cell_center(arena, arena.spawns[0]) && session.characters[1].position == arena_cell_center(arena, arena.spawns[1]))
     testing.expect(t, session.characters[0].definition_id == 3 && session.characters[1].definition_id == 4)
     testing.expect(t, session.characters[0].owner_id == 1 && session.characters[1].owner_id == 2)
     first_id := session.characters[0].entity_id
@@ -97,7 +98,7 @@ movement_is_fixed_step_owner_bound_and_times_out :: proc(t: ^testing.T) {
 @(test)
 movement_normalizes_diagonals_and_blocks_terrain :: proc(t: ^testing.T) {
     content: Game_Content
-    testing.expect(t, content_load(&content, "client/content/data"))
+    testing.expect(t, content_load(&content, "tests/fixtures/movement"))
     defer content_destroy(&content)
     arena := content_arena(&content, 1)
     start := [2]f32{144, 240}
@@ -118,7 +119,7 @@ movement_normalizes_diagonals_and_blocks_terrain :: proc(t: ^testing.T) {
 
 @(test)
 movement_protocol_fixtures_and_channel_validation :: proc(t: ^testing.T) {
-    input := [15]u8{'O', 'G', 'A', 'A', 5, 10, 1, 2, 3, 4, 9, 10, 11, 12, 6}
+    input := [15]u8{'O', 'G', 'A', 'A', 6, 10, 1, 2, 3, 4, 9, 10, 11, 12, 6}
     command, valid := protocol_decode(input[:], 1)
     testing.expect(t, valid && command.round_id == 0x04030201 && command.input_sequence == 0x0c0b0a09 && command.input_mask == 6)
     _, valid = protocol_decode(input[:], 0)
@@ -132,7 +133,7 @@ movement_protocol_fixtures_and_channel_validation :: proc(t: ^testing.T) {
             {entity_id = 1, definition_id = 3, owner_id = 1, position = {144, 240}, applied_input_sequence = 0x0c0b0a09, input_mask = 6},
             {entity_id = 2, definition_id = 4, owner_id = 2, position = {496, 240}},
         }}
-    expected := [55]u8{'O', 'G', 'A', 'A', 5, 11, 1, 2, 3, 4, 5, 6, 7, 8, 2,
+    expected := [55]u8{'O', 'G', 'A', 'A', 6, 11, 1, 2, 3, 4, 5, 6, 7, 8, 2,
         1, 0, 0, 0, 3, 0, 1, 0, 144, 0, 0, 0, 240, 0, 0, 9, 10, 11, 12, 6,
         2, 0, 0, 0, 4, 0, 2, 0, 240, 1, 0, 0, 240, 0, 0, 0, 0, 0, 0, 0}
     testing.expect(t, protocol_encode_world(&session) == expected)

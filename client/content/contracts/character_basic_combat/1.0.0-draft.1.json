@@ -1,0 +1,18 @@
+{
+  "schema_version": 1,
+  "id": "character.basic_combat",
+  "version": "1.0.0-draft.1",
+  "export_api_version": "0.1.0",
+  "world_units_per_gameplay_unit": 32,
+  "facings": ["north", "north_east", "east", "south_east", "south", "south_west", "west", "north_west"],
+  "roles": {
+    "idle": {"variant": "default", "loop": true, "minimum_frames": 1, "binding_kinds": ["clip"]},
+    "walk": {"variant": "default", "loop": true, "minimum_frames": 2, "binding_kinds": ["clip"]},
+    "hurt": {"variant": "default", "loop": false, "minimum_frames": 1, "binding_kinds": ["clip", "hurt_flash"]},
+    "attack": {"variant": "primary", "loop": false, "minimum_frames": 2, "binding_kinds": ["clip"]},
+    "death": {"variant": "default", "loop": false, "minimum_frames": 1, "binding_kinds": ["clip", "death_fade"]}
+  },
+  "required_components": ["identity", "metrics", "movement", "health", "hurtbox", "primary_attack"],
+  "attack_phases": ["windup", "active", "recovery"],
+  "admission_checks": ["module_isolation", "gameplay_components", "state_lifecycle", "combat", "networking", "visual_review"]
+}

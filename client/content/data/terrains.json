@@ -35,6 +35,41 @@
       "display_name": "Stone",
       "symbol": "#",
       "walkable": false
+    },
+    {
+      "id": 6,
+      "key": "cliff",
+      "display_name": "Cliff",
+      "symbol": "c",
+      "walkable": false
+    },
+    {
+      "id": 7,
+      "key": "stairs",
+      "display_name": "Stairs",
+      "symbol": "=",
+      "walkable": true
+    },
+    {
+      "id": 8,
+      "key": "forest",
+      "display_name": "Forest",
+      "symbol": "t",
+      "walkable": false
+    },
+    {
+      "id": 9,
+      "key": "tall_grass",
+      "display_name": "Tall grass",
+      "symbol": "\"",
+      "walkable": true
+    },
+    {
+      "id": 10,
+      "key": "building",
+      "display_name": "Building",
+      "symbol": "b",
+      "walkable": false
     }
   ]
 }

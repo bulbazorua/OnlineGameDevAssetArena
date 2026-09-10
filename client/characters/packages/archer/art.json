@@ -1,0 +1,37 @@
+{
+  "frame_side": 192,
+  "body_rect": [72, 64, 48, 64],
+  "feet": [96, 128],
+  "strips": [
+    {"clip": "bow_rest", "file": "Archer_Idle.png", "count": 6, "fps": 6, "loop": true},
+    {"clip": "bow_run", "file": "Archer_Run.png", "count": 4, "fps": 8, "loop": true},
+    {"clip": "bow_shoot", "file": "Archer_Shoot.png", "count": 8, "fps": 10, "loop": false}
+  ],
+  "authored_sequences": [
+    {
+      "clip": "bow_hurt", "file": "Archer_hurt.png", "source_size": [2172, 724],
+      "scale": 0.3, "fps": 10, "loop": false,
+      "frames": [
+        {"rect": [60, 230, 270, 320], "ground": [202, 527]},
+        {"rect": [420, 230, 270, 320], "ground": [553, 528]},
+        {"rect": [760, 230, 280, 320], "ground": [900, 527]},
+        {"rect": [1160, 230, 240, 320], "ground": [1285, 534]},
+        {"rect": [1500, 230, 270, 320], "ground": [1630, 534]},
+        {"rect": [1850, 230, 270, 320], "ground": [1985, 524]}
+      ]
+    },
+    {
+      "clip": "bow_fall", "file": "Archer_death.png", "source_size": [2172, 724],
+      "scale": 0.35, "fps": 8, "loop": false,
+      "frames": [
+        {"rect": [50, 230, 260, 280], "ground": [178, 481]},
+        {"rect": [325, 230, 260, 280], "ground": [460, 484]},
+        {"rect": [630, 230, 260, 280], "ground": [755, 487]},
+        {"rect": [960, 230, 240, 280], "ground": [1060, 493]},
+        {"rect": [1220, 230, 320, 280], "ground": [1380, 493]},
+        {"rect": [1570, 230, 260, 280], "ground": [1696, 493]},
+        {"rect": [1880, 230, 260, 280], "ground": [2015, 493]}
+      ]
+    }
+  ]
+}

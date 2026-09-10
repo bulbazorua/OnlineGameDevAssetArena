@@ -1,0 +1,12 @@
+{
+  "cell": [100, 100],
+  "body": [44, 42, 13, 14],
+  "ground": [50, 56],
+  "animations": {
+    "orc_rest": {"source": "Orc_Idle.png", "frames": 6, "rate": 8, "repeat": true},
+    "orc_walk": {"source": "Orc_Walk.png", "frames": 8, "rate": 10, "repeat": true},
+    "orc_hurt": {"source": "Orc_Hurt.png", "frames": 4, "rate": 8, "repeat": false},
+    "orc_axe": {"source": "Orc_Attack01.png", "frames": 6, "rate": 10, "repeat": false},
+    "orc_fall": {"source": "Orc_Death.png", "frames": 4, "rate": 6, "repeat": false}
+  }
+}

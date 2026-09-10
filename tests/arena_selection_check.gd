@@ -61,7 +61,7 @@ func _check() -> String:
 	var motion := InputEventMouseMotion.new()
 	motion.position = local_position
 	preview._gui_input(motion)
-	if late.arena_selection.terrain_label.text != "Tile (10, 3) · Stone · Blocked": return "Terrain inspector did not display the shared terrain type."
+	if late.arena_selection.terrain_label.text != "Tile (10, 3) · Cliff · Level 1 · Blocked": return "Terrain inspector did not display the shared terrain and elevation."
 	late.arena_selection.get_node("%DisconnectButton").pressed.emit()
 	if not await _wait_for(func(): return _maps_match(3, 1)): return "Viewer departure changed the map."
 	first.arena_selection.cards[1].pressed.emit()

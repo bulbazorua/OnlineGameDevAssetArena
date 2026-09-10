@@ -18,6 +18,7 @@ class ArenaDefinition:
 	var height: int
 	var tile_size: int
 	var cells := PackedInt32Array()
+	var elevations := PackedByteArray()
 	var spawns: Array[Vector2i] = []
 
 	func terrain_id_at(cell: Vector2i) -> int:
@@ -27,6 +28,11 @@ class ArenaDefinition:
 
 	func cell_center(cell: Vector2i) -> Vector2:
 		return (Vector2(cell) + Vector2(0.5, 0.5)) * tile_size
+
+	func elevation_at(cell: Vector2i) -> int:
+		if terrain_id_at(cell) == 0:
+			return -1
+		return 0 if elevations.is_empty() else elevations[cell.y * width + cell.x]
 
 	func world_to_cell(position: Vector2) -> Vector2i:
 		return Vector2i((position / tile_size).floor())
@@ -73,8 +79,8 @@ func parse_terrains(root: Variant) -> String:
 
 
 func parse_arenas(root: Variant, footprint_radius: float) -> String:
-	if not valid_root(root, "arenas") or root.arenas.is_empty() or root.arenas.size() > 65535:
-		return "Arena catalog requires schema_version 1 and an arenas array."
+	if not root is Dictionary or not integer_in(root.get("schema_version"), 1, 2) or not root.get("arenas") is Array or root.arenas.is_empty() or root.arenas.size() > 65535:
+		return "Arena catalog requires schema_version 1 or 2 and an arenas array."
 	var keys: Dictionary = {}
 	for entry: Variant in root.arenas:
 		if not valid_identity(entry) or not integer_in(entry.get("width"), 3, 128) or not integer_in(entry.get("height"), 3, 128) or not integer_in(entry.get("tile_size"), 16, 128):
@@ -98,6 +104,20 @@ func parse_arenas(root: Variant, footprint_radius: float) -> String:
 				if not by_symbol.has(symbol):
 					return "Arena %s contains unknown terrain '%s'." % [arena.key, symbol]
 				arena.cells.append(by_symbol[symbol])
+		arena.elevations.resize(arena.width * arena.height)
+		if root.schema_version == 2:
+			if not entry.get("elevation_rows") is Array or entry.elevation_rows.size() != arena.height:
+				return "Arena %s needs one elevation row per map row." % arena.key
+			for y in arena.height:
+				var row: Variant = entry.elevation_rows[y]
+				if not row is String or row.length() != arena.width:
+					return "Arena %s has an invalid elevation row." % arena.key
+				for x in arena.width:
+					if row[x] not in ["0", "1", "2", "3"]:
+						return "Elevation must be a digit from 0 to 3."
+					arena.elevations[y * arena.width + x] = int(row[x])
+		elif entry.has("elevation_rows"):
+			return "Elevation rows require arena schema_version 2."
 		for spawn: Variant in entry.spawns:
 			if not spawn is Array or spawn.size() != 2 or not integer_in(spawn[0], 0, arena.width - 1) or not integer_in(spawn[1], 0, arena.height - 1):
 				return "Arena %s has an invalid spawn cell." % arena.key
@@ -116,6 +136,16 @@ func parse_arenas(root: Variant, footprint_radius: float) -> String:
 func is_blocked(arena: ArenaDefinition, cell: Vector2i) -> bool:
 	var terrain: TerrainDefinition = terrains_by_id.get(arena.terrain_id_at(cell))
 	return terrain == null or not terrain.walkable
+
+
+func step_is_allowed(arena: ArenaDefinition, from: Vector2, to: Vector2) -> bool:
+	var a := arena.world_to_cell(from)
+	var b := arena.world_to_cell(to)
+	if arena.elevation_at(a) == arena.elevation_at(b):
+		return true
+	var first: TerrainDefinition = terrains_by_id.get(arena.terrain_id_at(a))
+	var second: TerrainDefinition = terrains_by_id.get(arena.terrain_id_at(b))
+	return first != null and second != null and absi(arena.elevation_at(a) - arena.elevation_at(b)) == 1 and (first.key == "stairs" or second.key == "stairs")
 
 
 func spawn_is_clear(arena: ArenaDefinition, cell: Vector2i, radius: float) -> bool:
