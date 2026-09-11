@@ -4,6 +4,7 @@ const Reader = preload("res://dev/ai/replay_reader.gd")
 var failed := false
 var recording := ""
 var artifacts := ""
+var legacy := ""
 var app: Control
 var temporary: Array[String] = []
 
@@ -16,6 +17,7 @@ func _initialize() -> void:
 	for argument in OS.get_cmdline_user_args():
 		if argument.begins_with("--replay="): recording = argument.trim_prefix("--replay=")
 		if argument.begins_with("--artifacts="): artifacts = argument.trim_prefix("--artifacts=")
+		if argument.begins_with("--legacy="): legacy = argument.trim_prefix("--legacy=")
 	_run.call_deferred()
 
 func until(condition: Callable, message: String) -> bool:
@@ -35,7 +37,7 @@ func pose_signature() -> String:
 	var poses := []
 	for id in app.stage.views:
 		var view = app.stage.views[id]
-		poses.append([id, view.position, view.presented_frame, view.animator.elapsed, view.visible])
+		poses.append([id, view.position, view.presented_frame, view.animator.elapsed, view.animator.facing, view.visible])
 	return str([app.current_index, app.snapshot.server_tick, poses])
 
 func seek(index: int) -> bool:
@@ -55,11 +57,16 @@ func _run() -> void:
 	var fingerprint: String = app.content.fingerprint.hex_encode()
 	if not check(reader.scan(recording, fingerprint), "Production replay rejected: " + reader.error): _finish(); return
 	check(reader.warning.is_empty(), "Gracefully closed production recording is incomplete: " + reader.warning)
+	check(int(reader.header.schema_version) == 4 and int(reader.header.trace_schema) == 4, "Production recording is not envelope/trace schema 4.")
 	var active := -1
+	var sampled := -1
 	var first_trainer := Vector2.INF
 	var first_creature := Vector2.INF
+	var first_facing := -1
 	var trainer_moved := false
 	var creature_moved := false
+	var creature_turned := false
+	var stale_sample := false
 	for index in reader.entries.size():
 		var result := reader.read_frame(index)
 		if not check(result.error.is_empty(), "Invalid recorded frame: " + result.error): _finish(); return
@@ -68,16 +75,28 @@ func _run() -> void:
 		if first_trainer == Vector2.INF:
 			first_trainer = state.trainers[0].position
 			first_creature = state.characters[0].position
+			first_facing = state.characters[0].facing
 		trainer_moved = trainer_moved or state.trainers[0].position != first_trainer
 		creature_moved = creature_moved or state.characters[0].position != first_creature
+		creature_turned = creature_turned or state.characters[0].facing != first_facing
+		for record in result.frame.ai:
+			check(int(record.schema_version) == 4 and int(record.input.tick) == state.server_tick, "Recorded trace is not a schema-4 record of this frame.")
+			var nose: Dictionary = record.input.senses.olfaction
+			check(nose.status != "Sampled" or int(nose.sample_tick) <= state.server_tick, "Recorded nose sample is newer than its world frame.")
+			var sample: Dictionary = record.input.senses.vision
+			if sample.status == "Sampled":
+				check(int(sample.sample_tick) <= state.server_tick, "Recorded eye sample is newer than its world frame.")
+				if int(sample.sample_tick) < state.server_tick: stale_sample = true
+				if int(sample.focused_count) + int(sample.cue_count) > 0 and sampled < 0: sampled = index
 		if result.frame.ai.size() == 2 and state.summon_elapsed_ticks == 90: active = index
 	check(trainer_moved, "Fixture contains no actual recorded trainer movement.")
-	# Integration captures a full wander cycle; the 60-tick writer unit fixture
-	# intentionally ends before some seeded idle deadlines.
-	if reader.entries.size() > 300: check(creature_moved, "Fixture contains no actual creature movement.")
+	check(not creature_moved, "Observe translated a creature in the recording.")
+	if reader.entries.size() > 300: check(creature_turned and sampled > 0, "Recording shows no turning or delivered evidence.")
+	check(stale_sample, "Recording never retained an eye sample older than the selected frame.")
 	if not check(active > 0, "No frame with both creature traces."): _finish(); return
-	await seek(active)
-	var expected := reader.read_frame(active)
+	var inspect := active if sampled < 0 else maxi(sampled, 1)
+	await seek(inspect)
+	var expected := reader.read_frame(inspect)
 	check(app.frame.packet_hex == expected.frame.packet_hex, "Seek displayed a different world packet.")
 	for entity in app.snapshot.trainers + app.snapshot.characters:
 		check(app.stage.views[entity.entity_id].position == entity.position, "Rendered entity differs from selected authoritative position.")
@@ -91,20 +110,25 @@ func _run() -> void:
 	for owner in [1, 2]:
 		app._tabs.current_tab = owner
 		await process_frame
+		if not app._traces.has(owner): continue
 		check(app._traces[owner].input.tick == app.snapshot.server_tick, "AI panel is on a different tick.")
 		var graph: Control = app._graphs[owner - 1]
+		var vision: Control = app._visions[owner - 1]
+		check(vision.record == app._traces[owner], "Vision panel shows another decision.")
 		for node in graph.nodes:
 			if node.parent > 0: check(graph.positions[int(node.parent)].y < graph.positions[int(node.id)].y, "Graph does not branch downward.")
 		app.step_trace(owner, -100)
-		check(graph.event_count == 0, "First event did not rewind the graph.")
+		check(graph.event_count == 0 and vision.event_count == 0, "First event did not rewind the graph and vision panel.")
 		app.step_trace(owner, 1)
-		check(graph.event_count == 1, "Single event stepping skipped a node.")
+		check(graph.event_count == 1 and not vision._revealed("Age private memory", "State"), "Single event stepping revealed later memory changes.")
 		app.step_trace(owner, 100)
+		check(vision._revealed("Host resolved", "Outcome"), "Full trace did not reveal the confirmed result.")
 		graph.center_root()
 		await capture("replay-tree-p%d" % owner)
+		await capture("replay-vision-p%d" % owner)
 	app._tabs.current_tab = 0
-	await seek(maxi(0, active - 30))
-	await seek(active)
+	await seek(maxi(0, inspect - 30))
+	await seek(inspect)
 	check(pose_signature() == paused, "Backward then forward seek did not restore identical poses.")
 	await seek(0)
 	app.speed = 2.0
@@ -126,22 +150,31 @@ func _run() -> void:
 	check(not probe.scan(recording, "0".repeat(64)), "Content mismatch was accepted.")
 	var partial := fixture("partial", header + JSON.stringify(first) + "\n{\"kind\":")
 	check(probe.scan(partial, fingerprint) and not probe.warning.is_empty() and probe.entries.size() == 1, "Incomplete final line was not recovered/reported.")
-	for mutation in [
-		func(value): value.tick += 1,
-		func(value): value.packet_hex = "xx",
-		func(value): value.ai = [expected.frame.ai[0], expected.frame.ai[0]],
-		func(value): value.ai = [expected.frame.ai[0]],
-	]:
-		var broken: Dictionary = first.duplicate(true)
-		mutation.call(broken)
+	# Each mutation names its base frame: a trace from another tick must not attach
+	# to the first frame; corrupt evidence must not attach to its own frame.
+	var mutations := [
+		[expected.frame, func(value): value.tick += 1],
+		[expected.frame, func(value): value.packet_hex = "xx"],
+		[expected.frame, func(value): value.ai = [expected.frame.ai[0], expected.frame.ai[0]]],
+		[first, func(value): value.ai = [expected.frame.ai[0]]],
+		[expected.frame, func(value): value.ai[0].input.senses.vision.cues[0] = {"observation_id": 3, "sector": 2, "band": "Far", "position": [5, 5]}; value.ai[0].input.senses.vision.cue_count = 1],
+		[expected.frame, func(value): value.ai[0].input.senses.vision.sample_tick = value.tick + 1],
+		[expected.frame, func(value): value.ai[0].schema_version = 1],
+	]
+	for index in mutations.size():
+		var broken: Dictionary = mutations[index][0].duplicate(true)
+		mutations[index][1].call(broken)
 		var path := fixture("invalid-%d" % temporary.size(), header + JSON.stringify(broken) + "\n")
-		check(not probe.scan(path, fingerprint), "Malformed or mismatched frame was accepted.")
+		check(not probe.scan(path, fingerprint), "Malformed or mismatched frame %d was accepted." % index)
 	check(not probe.scan(fixture("interior", header + JSON.stringify(first) + "\ninvalid\n" + JSON.stringify(second) + "\n"), fingerprint), "Interior corruption was accepted.")
 	check(not probe.scan(fixture("order", header + JSON.stringify(second) + "\n" + JSON.stringify(first) + "\n"), fingerprint), "Out-of-order frames were accepted.")
 	check(not probe.scan(fixture("large-line", header + "x".repeat(Reader.MAX_LINE + 1)), fingerprint), "Oversized line was accepted.")
 	var mismatched: Dictionary = reader.header.duplicate(true)
 	mismatched.schema_version = 999
 	check(not probe.scan(fixture("schema", JSON.stringify(mismatched) + "\n"), fingerprint), "Unknown schema was accepted.")
+	mismatched = reader.header.duplicate(true)
+	mismatched.trace_schema = 1
+	check(not probe.scan(fixture("envelope", JSON.stringify(mismatched) + "\n" + JSON.stringify(first) + "\n"), fingerprint), "Envelope/trace schema mismatch was accepted.")
 	var gap: Dictionary = second.duplicate(true)
 	gap.sequence = first.sequence + 2
 	var gap_path := fixture("gap", header + JSON.stringify(first) + "\n" + JSON.stringify(gap) + "\n")
@@ -161,9 +194,18 @@ func _run() -> void:
 		app._tabs.current_tab = owner
 		await process_frame
 		check(not app._graphs[owner - 1].visible and app._trace_labels[owner - 1].text.begins_with("No P"), "Missing AI trace was replaced by a previous one.")
+	# Historical envelope 1 with schema-1 traces still indexes with its own content
+	# identity, is rejected against current content, and invents no eyes.
+	if not legacy.is_empty():
+		var old_header = Reader.Trace.parse_json(FileAccess.open(legacy, FileAccess.READ).get_line())
+		var old := Reader.new()
+		check(old_header is Dictionary and old.scan(legacy, old_header.fingerprint) and old.entries.size() == 3 and old.warning.is_empty(), "Legacy schema-1 recording rejected: " + old.error)
+		var old_frame := old.read_frame(2)
+		check(old_frame.error.is_empty() and old_frame.frame.ai.size() == 2 and int(old_frame.frame.ai[0].schema_version) == 1 and not old_frame.frame.ai[0].input.has("senses"), "Legacy frame lost its original shape.")
+		check(not probe.scan(legacy, fingerprint), "Legacy recording was accepted against the current content fingerprint.")
 	if not artifacts.is_empty():
 		var output := FileAccess.open(artifacts.path_join("replay-check.json"), FileAccess.WRITE)
-		output.store_string(JSON.stringify({"passed": not failed, "frames": reader.entries.size(), "trainer_moved": trainer_moved, "creature_moved": creature_moved, "graphical": DisplayServer.get_name() != "headless"}))
+		output.store_string(JSON.stringify({"passed": not failed, "frames": reader.entries.size(), "trainer_moved": trainer_moved, "creature_turned": creature_turned, "creature_moved": creature_moved, "first_evidence_frame": sampled, "graphical": DisplayServer.get_name() != "headless"}))
 	_finish()
 
 func _finish() -> void:
@@ -171,5 +213,5 @@ func _finish() -> void:
 		root.remove_child(app)
 		app.free()
 	for path in temporary: DirAccess.remove_absolute(path)
-	if not failed: print("PASS: recorded world and AI identity, movement, seek, frozen poses, play/speed/restart, graphs, gaps, missing traces, bounded malformed-file handling.")
+	if not failed: print("PASS: recorded world and AI identity, turning without translation, retained eye samples, synchronized vision panels, seek, frozen poses, play/speed/restart, graphs, gaps, missing traces, schema envelopes and bounded malformed-file handling.")
 	quit(1 if failed else 0)

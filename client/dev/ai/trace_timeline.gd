@@ -52,7 +52,7 @@ func _draw() -> void:
 		var record: Dictionary = records[index]
 		var y := index * ROW_HEIGHT - _scroll.value
 		var selected := int(record.sequence) == selected_sequence
-		var color := Palette.color("Selected" if record.after.last.requested.kind == "Move" else "Info")
+		var color := Palette.color("Selected" if record.after.last.requested.kind in ["Move", "Face"] else "Info")
 		if selected:
 			draw_rect(Rect2(0, y, size.x - 15, ROW_HEIGHT - 2), Color("263f55"))
 			draw_rect(Rect2(0, y, 3, ROW_HEIGHT - 2), Palette.color("Selected"))

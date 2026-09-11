@@ -8,6 +8,10 @@ class TerrainDefinition:
 	var display_name: String
 	var symbol: String
 	var walkable: bool
+	var blocks_vision: bool # Independent of walkability: water blocks walking, not sight.
+	var scent: String # Authored scent behaviour: open, water or solid.
+
+const SCENT_MEDIA := ["open", "water", "solid"]
 
 class ArenaDefinition:
 	extends RefCounted
@@ -53,12 +57,14 @@ func clear() -> void:
 
 
 func parse_terrains(root: Variant) -> String:
-	if not valid_root(root, "terrains") or root.terrains.is_empty() or root.terrains.size() > 94:
-		return "Terrain catalog requires schema_version 1 and 1–94 terrain definitions."
+	if not valid_root(root, "terrains", 3) or root.terrains.is_empty() or root.terrains.size() > 94:
+		return "Terrain catalog requires schema_version 3 and 1–94 terrain definitions."
 	var keys: Dictionary = {}
 	for entry: Variant in root.terrains:
-		if not valid_identity(entry) or not entry.get("symbol") is String or not entry.get("walkable") is bool:
-			return "Each terrain needs an ID, key, name, symbol, and walkable boolean."
+		if not valid_identity(entry) or not entry.get("symbol") is String or not entry.get("walkable") is bool or not entry.get("blocks_vision") is bool:
+			return "Each terrain needs an ID, key, name, symbol, walkable and blocks_vision booleans."
+		if entry.get("scent") not in SCENT_MEDIA:
+			return "Each terrain needs a scent medium: open, water or solid."
 		var symbol: String = entry.symbol
 		if symbol.length() != 1 or symbol.unicode_at(0) < 33 or symbol.unicode_at(0) > 126:
 			return "Terrain symbols must be one printable ASCII character."
@@ -71,6 +77,8 @@ func parse_terrains(root: Variant) -> String:
 		terrain.display_name = entry.display_name
 		terrain.symbol = symbol
 		terrain.walkable = entry.walkable
+		terrain.blocks_vision = entry.blocks_vision
+		terrain.scent = entry.scent
 		terrains.append(terrain)
 		terrains_by_id[id] = terrain
 		by_symbol[symbol] = id
@@ -138,6 +146,18 @@ func is_blocked(arena: ArenaDefinition, cell: Vector2i) -> bool:
 	return terrain == null or not terrain.walkable
 
 
+# Planar sight blocking, mirroring the host's baked opacity. Outside the map blocks.
+func blocks_sight(arena: ArenaDefinition, cell: Vector2i) -> bool:
+	var terrain: TerrainDefinition = terrains_by_id.get(arena.terrain_id_at(cell))
+	return terrain == null or terrain.blocks_vision
+
+
+# How a cell holds scent, mirroring the host's baked media. Outside the map is solid.
+func scent_medium(arena: ArenaDefinition, cell: Vector2i) -> String:
+	var terrain: TerrainDefinition = terrains_by_id.get(arena.terrain_id_at(cell))
+	return "solid" if terrain == null else terrain.scent
+
+
 func step_is_allowed(arena: ArenaDefinition, from: Vector2, to: Vector2) -> bool:
 	var a := arena.world_to_cell(from)
 	var b := arena.world_to_cell(to)
@@ -173,8 +193,8 @@ static func integer_in(value: Variant, minimum: int, maximum: int) -> bool:
 	return (value is int or value is float) and is_finite(float(value)) and value >= minimum and value <= maximum and float(value) == floor(float(value))
 
 
-static func valid_root(value: Variant, field: String) -> bool:
-	return value is Dictionary and integer_in(value.get("schema_version"), 1, 1) and value.get(field) is Array
+static func valid_root(value: Variant, field: String, schema := 1) -> bool:
+	return value is Dictionary and integer_in(value.get("schema_version"), schema, schema) and value.get(field) is Array
 
 
 static func valid_identity(entry: Variant) -> bool:

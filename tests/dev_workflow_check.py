@@ -52,7 +52,7 @@ def main():
     shutil.copy2(ROOT / "build/deps/libenet.a", sandbox / "build/deps/libenet.a")
     wrapper = sandbox / "godot-driver"
     wrapper.write_text("#!/usr/bin/env python3\nimport os, sys\nargs = sys.argv[1:]\n"
-                       "if '--dev' in args and '--ai-debug' not in args:\n    args = ['--script', " + repr(str(sandbox / "tests/dev_client_driver.gd")) + "] + args\n"
+                       "if '--dev' in args and '--ai-debug' not in args and '--senses-debug' not in args:\n    args = ['--script', " + repr(str(sandbox / "tests/dev_client_driver.gd")) + "] + args\n"
                        "os.execvp(" + repr(args.godot) + ", [" + repr(args.godot) + "] + args)\n")
     wrapper.chmod(0o755)
     base = [sys.executable, str(sandbox / "tools/dev_session.py"), "--godot", str(wrapper), "--odin", args.odin, "--audience-delay", "0", "--seed", "42"]
@@ -169,8 +169,8 @@ def main():
         assert len({s["fingerprint"] for s in statuses()}) == 1 and statuses()[0]["fingerprint"] != old_fingerprint
         third = session()
         # A nested pure-AI package edit must rebuild/relaunch with the same seed.
-        wander = sandbox / "server/ai/wander.odin"
-        wander.write_text(wander.read_text().replace("6, 64, 128", "6, 48, 128"))
+        observe = sandbox / "server/ai/observe.odin"
+        observe.write_text(observe.read_text().replace("return {{180, 30}, 30, 1}", "return {{180, 30}, 24, 1}"))
         wait(lambda: session().get("pids") != third["pids"], "nested AI source reload")
         assert session()["scenario"]["seed"] == 42
         third = session()

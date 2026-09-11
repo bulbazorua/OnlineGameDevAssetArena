@@ -1,4 +1,4 @@
-// Optional diagnostics. No trace field influences a decision or random draw.
+// Optional diagnostics. No trace field influences a decision or a memory update.
 package ai
 
 import "core:sync"
@@ -14,6 +14,7 @@ Trace_Node :: struct {
     label, metric: string,
     value, threshold: f64,
     direction: Vector,
+    reference, subject: u32, // Observation/sample ID and subject handle this branch consumed.
     thread_id: int,
     elapsed_us: i64,
 }
@@ -29,18 +30,20 @@ trace_begin :: proc(trace: ^Trace_Buffer) {
 }
 
 trace_add :: proc(trace: ^Trace_Buffer, parent: int, stage: Trace_Stage, status: Trace_Status,
-                  label: string, metric: string = "", value: f64 = 0, threshold: f64 = 0, direction: Vector = {}) -> int {
+                  label: string, metric: string = "", value: f64 = 0, threshold: f64 = 0, direction: Vector = {},
+                  reference: u32 = 0, subject: u32 = 0) -> int {
     if trace == nil { return 0 }
     if trace.count == len(trace.nodes) { trace.truncated += 1; return 0 }
     id := trace.count + 1
     assert(parent >= 0 && parent < id)
-    trace.nodes[trace.count] = {id, parent, stage, status, label, metric, value, threshold, direction,
+    trace.nodes[trace.count] = {id, parent, stage, status, label, metric, value, threshold, direction, reference, subject,
         sync.current_thread_id(), i64(time.tick_since(trace.started) / time.Microsecond)}
     trace.count += 1
     return id
 }
 
 trace_condition :: proc(trace: ^Trace_Buffer, parent: int, label: string, passed: bool,
-                        metric: string = "", value: f64 = 0, threshold: f64 = 0, direction: Vector = {}) -> int {
-    return trace_add(trace, parent, .Branch, .Passed if passed else .Rejected, label, metric, value, threshold, direction)
+                        metric: string = "", value: f64 = 0, threshold: f64 = 0, direction: Vector = {},
+                        reference: u32 = 0, subject: u32 = 0) -> int {
+    return trace_add(trace, parent, .Branch, .Passed if passed else .Rejected, label, metric, value, threshold, direction, reference, subject)
 }

@@ -12,7 +12,7 @@ func _check() -> String:
 	if not await _wait_for(func(): return clients.all(func(client): return _entered(client))): return "Arena did not start."
 	if "--dev" not in OS.get_cmdline_user_args():
 		for client in clients:
-			if client.has_node("DebugOverlay") or client.game_arena.has_node("CollisionOverlay"): return "Normal client instantiated collision debug nodes."
+			if client.has_node("DebugOverlay") or client.game_arena.has_node("CollisionOverlay") or client.game_arena.has_node("SenseOverlay"): return "Normal client instantiated debug nodes."
 		return ""
 	var ui = first.get_node("DebugOverlay")
 	var overlay = ui.colliders
@@ -39,6 +39,8 @@ func _check() -> String:
 	if overlay.visible or not overlay.footprints.is_empty(): return "None left collision geometry visible."
 	# Real pointer event reaches a category checkbox; it does not capture WASD focus.
 	var buildings: CheckBox = ui.category_buttons.buildings
+	ui.get_node("%Filters").ensure_control_visible(buildings)
+	await process_frame
 	_click(first, buildings.get_global_rect().get_center())
 	if not overlay.categories.buildings or overlay.categories.values().count(true) != 1: return "Buildings-only checkbox did not isolate its category."
 	if first.get_viewport().gui_get_focus_owner() != null: return "Debug checkbox stole movement key focus."

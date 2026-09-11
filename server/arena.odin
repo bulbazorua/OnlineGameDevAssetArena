@@ -3,12 +3,26 @@ package main
 import "core:encoding/json"
 import "core:math"
 import "core:strings"
+import "perception"
 
+// Walkability, sight blocking and scent behaviour are independent gameplay
+// rules: each is authored per terrain, never derived from another.
 Terrain_Definition :: struct {
     id: u16,
     key, display_name: string,
     symbol: u8,
     walkable: bool,
+    blocks_vision: bool,
+    scent: perception.Scent_Medium,
+}
+
+scent_medium_from_key :: proc(key: string) -> (perception.Scent_Medium, bool) {
+    switch key {
+    case "open": return .Open, true
+    case "water": return .Water, true
+    case "solid": return .Solid, true
+    }
+    return .Solid, false
 }
 
 Arena_Definition :: struct {
@@ -17,6 +31,8 @@ Arena_Definition :: struct {
     width, height, tile_size: int,
     cells: []u16, // Terrain IDs, row-major. No renderer-specific tile indices.
     elevations: []u8, // Discrete land levels; stairs connect adjacent levels.
+    opaque: []bool, // Planar sight blocking per cell, baked from terrain at load.
+    scent_media: []perception.Scent_Medium, // How each cell holds scent, baked from terrain at load.
     spawns: [2][2]int,
 }
 
@@ -38,6 +54,33 @@ arena_terrain_id :: proc(arena: ^Arena_Definition, cell: [2]int) -> u16 {
 arena_cell_is_blocked :: proc(arena: ^Arena_Definition, content: ^Game_Content, cell: [2]int) -> bool {
     terrain := content_terrain(content, arena_terrain_id(arena, cell))
     return terrain == nil || !terrain.walkable
+}
+
+arena_cell_blocks_sight :: proc(arena: ^Arena_Definition, content: ^Game_Content, cell: [2]int) -> bool {
+    terrain := content_terrain(content, arena_terrain_id(arena, cell))
+    return terrain == nil || terrain.blocks_vision
+}
+
+arena_cell_scent_medium :: proc(arena: ^Arena_Definition, content: ^Game_Content, cell: [2]int) -> perception.Scent_Medium {
+    terrain := content_terrain(content, arena_terrain_id(arena, cell))
+    return .Solid if terrain == nil else terrain.scent
+}
+
+// Rebuild the baked per-cell rules after cells change (content load or a test fixture).
+arena_refresh_rules :: proc(arena: ^Arena_Definition, content: ^Game_Content) {
+    for y in 0..<arena.height {
+        for x in 0..<arena.width {
+            index := y * arena.width + x
+            arena.opaque[index] = arena_cell_blocks_sight(arena, content, {x, y})
+            arena.scent_media[index] = arena_cell_scent_medium(arena, content, {x, y})
+        }
+    }
+}
+
+// Immutable read-only view for privileged sight queries. Elevation is deliberately
+// absent: opaque cells block at every height and height alone never occludes.
+arena_opacity_grid :: proc(arena: ^Arena_Definition) -> perception.Opacity_Grid {
+    return {width = arena.width, height = arena.height, tile_size = f32(arena.tile_size), opaque = arena.opaque}
 }
 
 arena_cell_center :: proc(arena: ^Arena_Definition, cell: [2]int) -> [2]f32 {
@@ -102,11 +145,15 @@ content_parse_terrains :: proc(content: ^Game_Content, root: json.Object) -> boo
         name, name_ok := fields["display_name"].(json.String)
         symbol, symbol_ok := fields["symbol"].(json.String)
         walkable, walkable_ok := fields["walkable"].(json.Boolean)
-        if !id_ok || id < 1 || id > 65535 || !key_ok || !content_key_is_valid(string(key)) || !name_ok || len(strings.trim_space(string(name))) == 0 || !symbol_ok || len(symbol) != 1 || symbol[0] < 33 || symbol[0] > 126 || !walkable_ok { return false }
+        blocks_vision, blocks_ok := fields["blocks_vision"].(json.Boolean)
+        scent_key, scent_key_ok := fields["scent"].(json.String)
+        if !id_ok || id < 1 || id > 65535 || !key_ok || !content_key_is_valid(string(key)) || !name_ok || len(strings.trim_space(string(name))) == 0 || !symbol_ok || len(symbol) != 1 || symbol[0] < 33 || symbol[0] > 126 || !walkable_ok || !blocks_ok || !scent_key_ok { return false }
+        scent, scent_ok := scent_medium_from_key(string(scent_key))
+        if !scent_ok { return false }
         for previous in content.terrains {
             if previous.id == u16(id) || previous.key == string(key) || previous.symbol == symbol[0] { return false }
         }
-        append(&content.terrains, Terrain_Definition{u16(id), strings.clone(string(key)), strings.clone(string(name)), symbol[0], bool(walkable)})
+        append(&content.terrains, Terrain_Definition{u16(id), strings.clone(string(key)), strings.clone(string(name)), symbol[0], bool(walkable), bool(blocks_vision), scent})
     }
     return true
 }
@@ -129,12 +176,14 @@ content_parse_arenas :: proc(content: ^Game_Content, root: json.Object) -> bool 
         tile_size, size_ok := content_integer(fields["tile_size"])
         rows, rows_ok := fields["rows"].(json.Array)
         spawns, spawns_ok := fields["spawns"].(json.Array)
-        if !id_ok || id < 1 || id > 65535 || !key_ok || !content_key_is_valid(string(key)) || !name_ok || len(strings.trim_space(string(name))) == 0 || !width_ok || width < 3 || width > 128 || !height_ok || height < 3 || height > 128 || !size_ok || tile_size < 16 || tile_size > 128 || !rows_ok || len(rows) != int(height) || !spawns_ok || len(spawns) != 2 { return false }
+        if !id_ok || id < 1 || id > 65535 || !key_ok || !content_key_is_valid(string(key)) || !name_ok || len(strings.trim_space(string(name))) == 0 || !width_ok || width < 3 || width > perception.MAX_GRID_SIDE || !height_ok || height < 3 || height > perception.MAX_GRID_SIDE || !size_ok || tile_size < 16 || tile_size > 128 || !rows_ok || len(rows) != int(height) || !spawns_ok || len(spawns) != 2 { return false }
         for previous in content.arenas { if previous.id == u16(id) || previous.key == string(key) { return false } }
         // Own allocations before parsing cells so a failed load can release everything.
         append(&content.arenas, Arena_Definition{id = u16(id), key = strings.clone(string(key)), display_name = strings.clone(string(name)), width = int(width), height = int(height), tile_size = int(tile_size), cells = make([]u16, int(width * height))})
         arena := &content.arenas[len(content.arenas) - 1]
         arena.elevations = make([]u8, arena.width * arena.height)
+        arena.opaque = make([]bool, arena.width * arena.height)
+        arena.scent_media = make([]perception.Scent_Medium, arena.width * arena.height)
         for row_value, y in rows {
             row, row_ok := row_value.(json.String)
             if !row_ok || len(row) != arena.width { return false }
@@ -155,6 +204,7 @@ content_parse_arenas :: proc(content: ^Game_Content, root: json.Object) -> bool 
                 }
             }
         } else if _, exists := fields["elevation_rows"]; exists { return false }
+        arena_refresh_rules(arena, content)
         for spawn_value, index in spawns {
             coordinates, coord_ok := spawn_value.(json.Array)
             if !coord_ok || len(coordinates) != 2 { return false }

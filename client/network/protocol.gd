@@ -2,16 +2,22 @@ class_name GameProtocol
 extends RefCounted
 
 const SessionSnapshot = preload("res://session/session_snapshot.gd")
-enum MessageKind { HELLO = 1, WELCOME = 2, SESSION_STATE = 3, START_SELECTION = 4, SELECT_CHARACTER = 5, SET_READY = 6, RETURN_TO_LOBBY = 7, COMMAND_REJECTED = 8, SELECT_ARENA = 9, INPUT = 10, WORLD_STATE = 11 }
-enum CommandRejectReason { NONE, AUDIENCE_READ_ONLY, WRONG_PHASE, STALE_ROUND, UNKNOWN_CHARACTER, SELECTION_CHANGED, NEED_TWO_PLAYERS, UNKNOWN_ARENA, ARENA_CHANGED }
-const HEADER := [79, 71, 65, 65, 9]
+enum MessageKind { HELLO = 1, WELCOME = 2, SESSION_STATE = 3, START_SELECTION = 4, SELECT_CHARACTER = 5, SET_READY = 6, RETURN_TO_LOBBY = 7, COMMAND_REJECTED = 8, SELECT_ARENA = 9, INPUT = 10, WORLD_STATE = 11, DEV_RESET_SEARCH = 12 }
+enum CommandRejectReason { NONE, AUDIENCE_READ_ONLY, WRONG_PHASE, STALE_ROUND, UNKNOWN_CHARACTER, SELECTION_CHANGED, NEED_TWO_PLAYERS, UNKNOWN_ARENA, ARENA_CHANGED, DEV_ONLY, SEARCH_RESET_UNAVAILABLE }
+const HEADER := [79, 71, 65, 65, 11]
 const FACING_NAMES := ["north", "north_east", "east", "south_east", "south", "south_west", "west", "north_west"]
-const LOCOMOTION_NAMES := ["idle", "walk"]
+const LOCOMOTION_NAMES := ["idle", "walk", "run"]
 # Shared with server/character_actions.odin; state_start_tick starts preparation.
 const CHARACTER_WALK_START_TICKS := 12
 const TRAINER_DEFINITION_ID := 1
 const TRAINER_RADIUS := 9.6
 const TRAINER_WALK_START_TICKS := 8
+const TRAINER_RUN_INPUT := 16
+const TRAINER_RUN_SPEED := 240.0
+const TRAINER_ENERGY_MAX := 600
+const TRAINER_RUN_COST := 2
+const TRAINER_RECOVERY_DELAY := 60
+const TRAINER_RECOVERY_THRESHOLD := 120
 const SUMMON_DURATION_TICKS := 90
 const SUMMON_REVEAL_TICKS := 36
 const REJECT_PROTOCOL := 1
@@ -79,7 +85,7 @@ static func decode(packet: PackedByteArray, channel: int) -> DecodedMessage:
 			if message.audience_delay_ms > 60000 or (message.player_id > 0 and message.audience_delay_ms != 0):
 				return _invalid("The host sent an invalid audience delay.")
 		MessageKind.SESSION_STATE:
-			if packet.size() < 32 or packet[14] > SessionSnapshot.Phase.IN_ARENA or packet[15] > 3 or packet[31] not in [0, 2] or packet.size() != (138 if packet[31] == 2 else 32):
+			if packet.size() < 32 or packet[14] > SessionSnapshot.Phase.IN_ARENA or packet[15] > 3 or packet[31] not in [0, 2] or packet.size() != (164 if packet[31] == 2 else 32):
 				return _invalid("The host sent an invalid session state.")
 			var snapshot := SessionSnapshot.new(packet[15], _read_integer(packet, 16, 2))
 			if snapshot.audience_count + snapshot.player_count() > 4095:
@@ -120,7 +126,7 @@ static func decode(packet: PackedByteArray, channel: int) -> DecodedMessage:
 				return _invalid("Characters arrived before arena entry.")
 			message.session = snapshot
 		MessageKind.WORLD_STATE:
-			if packet.size() != 121 or packet[14] != 2:
+			if packet.size() != 147 or packet[14] != 2:
 				return _invalid("The host sent an invalid world state.")
 			message.session = SessionSnapshot.new()
 			message.session.round_id = _read_integer(packet, 6, 4)
@@ -128,7 +134,7 @@ static func decode(packet: PackedByteArray, channel: int) -> DecodedMessage:
 			if not _read_world(packet, 15, message.session):
 				return _invalid("The host sent invalid character positions.")
 		MessageKind.COMMAND_REJECTED:
-			if packet.size() != 12 or packet[10] not in [MessageKind.START_SELECTION, MessageKind.SELECT_CHARACTER, MessageKind.SET_READY, MessageKind.SELECT_ARENA, MessageKind.RETURN_TO_LOBBY, MessageKind.INPUT] or packet[11] < 1 or packet[11] > CommandRejectReason.ARENA_CHANGED:
+			if packet.size() != 12 or packet[10] not in [MessageKind.START_SELECTION, MessageKind.SELECT_CHARACTER, MessageKind.SET_READY, MessageKind.SELECT_ARENA, MessageKind.RETURN_TO_LOBBY, MessageKind.INPUT, MessageKind.DEV_RESET_SEARCH] or packet[11] < 1 or packet[11] > CommandRejectReason.SEARCH_RESET_UNAVAILABLE:
 				return _invalid("The host sent an invalid command rejection.")
 			message.round_id = _read_integer(packet, 6, 4)
 			message.rejected_kind = packet[10]
@@ -148,6 +154,8 @@ static func rejection_text(reason: int) -> String:
 		CommandRejectReason.NEED_TWO_PLAYERS: return "Waiting for a second player."
 		CommandRejectReason.UNKNOWN_ARENA: return "That arena is not in the host catalog."
 		CommandRejectReason.ARENA_CHANGED: return "The arena changed. Review it before pressing Ready."
+		CommandRejectReason.DEV_ONLY: return "Search reset requires a local development host running the search controller."
+		CommandRejectReason.SEARCH_RESET_UNAVAILABLE: return "This arena has too little connected space to place both creatures beyond vision range."
 	return "The host could not accept that action."
 
 
@@ -185,7 +193,7 @@ static func _read_world(packet: PackedByteArray, start: int, snapshot: SessionSn
 		character.applied_input_sequence = _read_integer(packet, offset + 15, 4)
 		character.input_mask = packet[offset + 19]
 		var owner_key := Vector2i(int(is_trainer), character.owner_id)
-		if character.entity_id == 0 or character.definition_id == 0 or character.owner_id not in [1, 2] or character.input_mask > 15 or ids.has(character.entity_id) or owners.has(owner_key) or character.position.x > 16384 or character.position.y > 16384:
+		if character.entity_id == 0 or character.definition_id == 0 or character.owner_id not in [1, 2] or character.input_mask > 31 or ids.has(character.entity_id) or owners.has(owner_key) or character.position.x > 16384 or character.position.y > 16384:
 			return false
 		if is_trainer and character.definition_id != TRAINER_DEFINITION_ID: return false
 		if not is_trainer and (character.applied_input_sequence != 0 or character.input_mask != 0): return false
@@ -205,6 +213,41 @@ static func _read_world(packet: PackedByteArray, start: int, snapshot: SessionSn
 		character.locomotion = packet[offset]
 		character.facing = packet[offset + 1]
 		character.state_start_tick = _read_integer(packet, offset + 2, 4)
-		if character.locomotion > 1 or character.facing > 7 or serial_is_newer(character.state_start_tick, snapshot.server_tick): return false
+		var limit := 2 if index >= 2 else 1
+		if character.locomotion > limit or character.facing > 7 or serial_is_newer(character.state_start_tick, snapshot.server_tick): return false
 		if snapshot.summon_elapsed_ticks < SUMMON_DURATION_TICKS and character.locomotion != 0: return false
+	for index in 2:
+		var character: SessionSnapshot.CharacterState = snapshot.characters[index]
+		var offset := start + 106 + index * 5
+		if packet[offset] > 1: return false
+		character.target_alert = packet[offset] == 1
+		character.target_acquired_tick = _read_integer(packet, offset + 1, 4)
+		if serial_is_newer(character.target_acquired_tick, snapshot.server_tick): return false
+		if character.target_alert and ((snapshot.server_tick - character.target_acquired_tick) & 0xffffffff) >= 60: return false
+	for index in 2:
+		var trainer: SessionSnapshot.TrainerState = snapshot.trainers[index]
+		var offset := start + 116 + index * 8
+		trainer.energy = _read_integer(packet, offset, 2)
+		trainer.energy_recovery_ticks = packet[offset + 2]
+		if trainer.energy > TRAINER_ENERGY_MAX or trainer.energy_recovery_ticks > TRAINER_RECOVERY_DELAY or packet[offset + 3] > 1: return false
+		trainer.run_exhausted = packet[offset + 3] == 1
+		trainer.movement_start_tick = _read_integer(packet, offset + 4, 4)
+		if serial_is_newer(trainer.movement_start_tick, trainer.state_start_tick): return false
 	return true
+
+
+static func decode_recorded(packet: PackedByteArray, version: int) -> DecodedMessage:
+	if version == HEADER[4]: return decode(packet, 0)
+	var old_size := 138 if version == 9 else 148
+	if version not in [9, 10] or packet.size() not in [32, old_size] or packet.slice(0, 6) != PackedByteArray([79, 71, 65, 65, version, MessageKind.SESSION_STATE]):
+		return _invalid("Unsupported historical world packet.")
+	var upgraded := packet.duplicate()
+	upgraded[4] = HEADER[4]
+	if packet.size() == old_size:
+		for index in 2:
+			if packet[91 + index * 20] > 15 or packet[126 + index * 6] > 1: return _invalid("Invalid historical trainer state.")
+		upgraded.resize(164)
+		for index in 2:
+			upgraded.encode_u16(148 + index * 8, TRAINER_ENERGY_MAX)
+			upgraded.encode_u32(152 + index * 8, packet.decode_u32(128 + index * 6))
+	return decode(upgraded, 0)

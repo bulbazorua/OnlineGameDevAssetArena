@@ -33,7 +33,7 @@ layout_mode = 1
 anchors_preset = 1
 anchor_left = 1.0
 anchor_right = 1.0
-offset_left = -212.0
+offset_left = -280.0
 offset_top = 12.0
 offset_right = -12.0
 offset_bottom = 90.0
@@ -83,40 +83,101 @@ focus_mode = 0
 toggle_mode = true
 text = "Filters [F4]"
 
-[node name="Filters" type="VBoxContainer" parent="Layout/Panel/Values"]
+[node name="Filters" type="ScrollContainer" parent="Layout/Panel/Values"]
 unique_name_in_owner = true
 visible = false
+custom_minimum_size = Vector2(0, 370)
 layout_mode = 2
+horizontal_scroll_mode = 0
+mouse_force_pass_scroll_events = false
+
+[node name="Contents" type="VBoxContainer" parent="Layout/Panel/Values/Filters"]
+layout_mode = 2
+size_flags_horizontal = 3
 theme_override_constants/separation = 6
 
-[node name="Separator" type="HSeparator" parent="Layout/Panel/Values/Filters"]
+[node name="SenseSeparator" type="HSeparator" parent="Layout/Panel/Values/Filters/Contents"]
 layout_mode = 2
 
-[node name="FilterRows" type="VBoxContainer" parent="Layout/Panel/Values/Filters"]
+[node name="SensesLabel" type="Label" parent="Layout/Panel/Values/Filters/Contents"]
+layout_mode = 2
+text = "Senses · Perception"
+
+[node name="VisionToggle" type="CheckBox" parent="Layout/Panel/Values/Filters/Contents"]
+unique_name_in_owner = true
+layout_mode = 2
+focus_mode = 0
+button_pressed = true
+text = "Vision cones [F5]"
+tooltip_text = "Show the sampled vision fields. This never changes physical colliders or what a creature senses."
+
+[node name="SenseRows" type="VBoxContainer" parent="Layout/Panel/Values/Filters/Contents"]
 unique_name_in_owner = true
 layout_mode = 2
 theme_override_constants/separation = 0
 
-[node name="Presets" type="HBoxContainer" parent="Layout/Panel/Values/Filters"]
+[node name="OlfactionLabel" type="Label" parent="Layout/Panel/Values/Filters/Contents"]
+layout_mode = 2
+text = "Senses · Olfaction"
+
+[node name="ScentToggle" type="CheckBox" parent="Layout/Panel/Values/Filters/Contents"]
+unique_name_in_owner = true
+layout_mode = 2
+focus_mode = 0
+text = "Host scent field [F8]"
+tooltip_text = "Privileged heatmap of the shared scent field for deposit/decay QA. Saved for this player window; never a creature input."
+
+[node name="ScentRows" type="VBoxContainer" parent="Layout/Panel/Values/Filters/Contents"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_constants/separation = 0
+
+[node name="FutureSenses" type="Label" parent="Layout/Panel/Values/Filters/Contents"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 12
+text = "Hearing, touch, pain:\nnot implemented yet."
+
+[node name="Separator" type="HSeparator" parent="Layout/Panel/Values/Filters/Contents"]
 layout_mode = 2
 
-[node name="AllColliders" type="Button" parent="Layout/Panel/Values/Filters/Presets"]
+[node name="PhysicalLabel" type="Label" parent="Layout/Panel/Values/Filters/Contents"]
+layout_mode = 2
+text = "Physical colliders"
+
+[node name="FilterRows" type="VBoxContainer" parent="Layout/Panel/Values/Filters/Contents"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_constants/separation = 0
+
+[node name="Presets" type="HBoxContainer" parent="Layout/Panel/Values/Filters/Contents"]
+layout_mode = 2
+
+[node name="AllColliders" type="Button" parent="Layout/Panel/Values/Filters/Contents/Presets"]
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_horizontal = 3
 focus_mode = 0
 text = "All colliders"
 
-[node name="NoColliders" type="Button" parent="Layout/Panel/Values/Filters/Presets"]
+[node name="NoColliders" type="Button" parent="Layout/Panel/Values/Filters/Contents/Presets"]
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_horizontal = 3
 focus_mode = 0
 text = "None"
 
-[node name="Help" type="Label" parent="Layout/Panel/Values/Filters"]
+[node name="Help" type="Label" parent="Layout/Panel/Values/Filters/Contents"]
 layout_mode = 2
 theme_override_colors/font_color = Color(0.65, 0.72, 0.82, 1)
 theme_override_font_sizes/font_size = 12
 text = "Circles show movement footprints.\nFilters affect this window only."
+mouse_filter = 2
+
+
+[node name="SenseStatus" type="Label" parent="Layout/Panel/Values"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_colors/font_color = Color(0.7, 0.8, 0.9, 1)
+theme_override_font_sizes/font_size = 12
+text = "Senses: waiting for arena"
 mouse_filter = 2

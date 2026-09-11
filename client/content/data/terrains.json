@@ -1,75 +1,95 @@
 {
-  "schema_version": 1,
+  "schema_version": 3,
   "terrains": [
     {
       "id": 1,
       "key": "grass",
       "display_name": "Grass",
       "symbol": ".",
-      "walkable": true
+      "walkable": true,
+      "blocks_vision": false,
+      "scent": "open"
     },
     {
       "id": 2,
       "key": "ground",
       "display_name": "Ground",
       "symbol": "g",
-      "walkable": true
+      "walkable": true,
+      "blocks_vision": false,
+      "scent": "open"
     },
     {
       "id": 3,
       "key": "sand",
       "display_name": "Sand",
       "symbol": "s",
-      "walkable": true
+      "walkable": true,
+      "blocks_vision": false,
+      "scent": "open"
     },
     {
       "id": 4,
       "key": "water",
       "display_name": "Water",
       "symbol": "w",
-      "walkable": false
+      "walkable": false,
+      "blocks_vision": false,
+      "scent": "water"
     },
     {
       "id": 5,
       "key": "stone",
       "display_name": "Stone",
       "symbol": "#",
-      "walkable": false
+      "walkable": false,
+      "blocks_vision": true,
+      "scent": "solid"
     },
     {
       "id": 6,
       "key": "cliff",
       "display_name": "Cliff",
       "symbol": "c",
-      "walkable": false
+      "walkable": false,
+      "blocks_vision": true,
+      "scent": "solid"
     },
     {
       "id": 7,
       "key": "stairs",
       "display_name": "Stairs",
       "symbol": "=",
-      "walkable": true
+      "walkable": true,
+      "blocks_vision": false,
+      "scent": "open"
     },
     {
       "id": 8,
       "key": "forest",
       "display_name": "Forest",
       "symbol": "t",
-      "walkable": false
+      "walkable": false,
+      "blocks_vision": true,
+      "scent": "solid"
     },
     {
       "id": 9,
       "key": "tall_grass",
       "display_name": "Tall grass",
       "symbol": "\"",
-      "walkable": true
+      "walkable": true,
+      "blocks_vision": false,
+      "scent": "open"
     },
     {
       "id": 10,
       "key": "building",
       "display_name": "Building",
       "symbol": "b",
-      "walkable": false
+      "walkable": false,
+      "blocks_vision": true,
+      "scent": "solid"
     }
   ]
 }

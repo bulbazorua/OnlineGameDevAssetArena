@@ -23,6 +23,7 @@ Network_Host :: struct {
     session: ^Session,
     content: ^Game_Content,
     session_dirty: bool,
+    dev_search_enabled: bool,
     audience: Audience_Stream,
     started_at: time.Tick,
 }
@@ -50,7 +51,7 @@ network_open :: proc(bind: string, port: u16, session: ^Session, content: ^Game_
         enet.deinitialize()
         return {}, false
     }
-    host.maximumPacketSize = 160
+    host.maximumPacketSize = 256
     host.maximumWaitingData = 4096
     fmt.printfln("[host] Listening on %s:%d (2 fighters, up to %d total connections)", bind, port, MAX_CONNECTIONS)
     fmt.printfln("[host] Audience delay: %.3f seconds.", f64(audience_delay_ms) / 1000)
@@ -133,7 +134,7 @@ network_receive :: proc(network: ^Network_Host, client: ^Client, event: ^enet.Ev
             network_drop(network, client, u32(Reject_Reason.Protocol))
             return
         }
-        changed, rejection := session_apply(network.session, network.content, client.player_id, command)
+        changed, rejection := session_apply(network.session, network.content, client.player_id, command, network.dev_search_enabled)
         if rejection != .None {
             round_id := network.session.round_id
             if client.player_id == 0 && network.audience.delay_ms > 0 {
@@ -222,7 +223,7 @@ network_publish_audience :: proc(network: ^Network_Host) {
     if !audience_advance(&network.audience, network.session, time.tick_since(network.started_at)) { return }
     state := &network.audience.latest
     roster := protocol_encode_session(state)
-    world: [121]u8
+    world: [147]u8
     if state.phase == .In_Arena { world = protocol_encode_world(state) }
     for &client in network.clients {
         if !client.welcomed || client.player_id != 0 { continue }

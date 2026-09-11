@@ -2,12 +2,16 @@
 
 Research and source review: **2026-09-10**. Status: **design proposal**.
 
-Implementation sequence: [MoPock senses and separate AI debug windows](../06c-senses-and-ai-debug-windows-plan.md).
-That plan records the live-code refactors and starts with vision; this document
-retains the research rationale and longer-term algorithm options.
-The preceding [dedicated-thread debugger harness](../06d-ai-debugger-harness.md) is
-implemented for current idle/wander AI. It records real branches before senses,
-learning and variable-duration deliberation are added.
+Roadmap update **2026-09-11**: [focused/peripheral vision and private visual memory](../06g-focused-and-peripheral-vision.md)
+are implemented and passed [Team Lead technical re-review](../06i-vision-team-lead-review.md);
+physical-input QA remains outstanding.
+The [combat sensory system](../06j-combat-sensory-system.md) defines vision,
+hearing, olfaction, tactile/terrain and pain, plus dedicated per-creature senses
+windows and vision filters at 6B.1.1. Pain follows authoritative damage at 6C.
+MoPock is conversational/design shorthand; proposed code/API names must remain
+generic. The [broader roadmap](../06c-senses-and-ai-debug-windows-plan.md) records
+the sequence. This document retains research rationale and longer-term algorithm
+options; it is not proof that learning or variable-duration thinking is implemented.
 
 MoPocks means “monsters in your pocket”: individual companions whose battle habits develop through their own encounters and their relationship with a player. This document proposes an implementation and connects its decisions to scientific papers. The examples, tuning values, and acceptance targets below are proposed game design, not measured results.
 
@@ -109,8 +113,8 @@ An AI “API” here initially means typed records and procedure contracts insid
 | Record | Lifetime and ownership | Contents |
 | --- | --- | --- |
 | `CharacterDefinition` | Shared, immutable content. | Body/capabilities, sense profile, innate skills, default temperament ranges. |
-| `MoPockProfile` | Persistent, keyed by a stable `mopock_id`. | `owner_player_id`, individual temperament, practice history, learned parameters, trainer relationship. |
-| `BattleMind` | One active round, linked to `mopock_id` and runtime `entity_id`. | Working memory, current opponent tracks, active tactic, short-term adaptation, RNG, current mood. |
+| `CreatureProfile` | Persistent, keyed by a stable `creature_id`. | `owner_player_id`, individual temperament, practice history, learned parameters, trainer relationship. |
+| `BattleMind` | One active round, linked to `creature_id` and runtime `entity_id`. | Working memory, current opponent tracks, active tactic, short-term adaptation, RNG, current mood. |
 | `PatternKnowledge` | Personal and persistent, subject to versioning. | Learned cue associations, timing estimates, response outcomes, confidence, provenance. |
 | `OpponentMemory` | Personal; an individual opponent key only after recognition. | Tendencies for that recognized opponent, with fallback to broader observed style/family knowledge. |
 | `BattleExperience` | Bounded recent records plus chosen summaries. | Observation history, decision/action IDs, attempted parameters, outcomes and attribution quality. |
@@ -298,7 +302,7 @@ A creature must sometimes try eligible alternatives to discover what works. Perm
 Each episode should connect:
 
 ```text
-mopock_id, match_id, decision_id, action_id, content/model versions
+creature_id, match_id, decision_id, action_id, content/model versions
 observations available at decision time and their ages
 context, eligible responses, chosen response and parameters
 selection probability, mood, trainer input
@@ -479,7 +483,7 @@ Learning from a diverse opponent population is a useful later direction. AlphaSt
 
 ### Save personal learning without blocking combat
 
-Use a host-owned profile store keyed by stable `mopock_id`. Load a coherent profile before the round, mutate its bounded battle copy, and save a copied delta/checkpoint outside the tick. SQLite is a plausible first local store; a database is not needed to prove the initial in-memory learner.
+Use a host-owned profile store keyed by stable `creature_id`. Load a coherent profile before the round, mutate its bounded battle copy, and save a copied delta/checkpoint outside the tick. SQLite is a plausible first local store; a database is not needed to prove the initial in-memory learner.
 
 Include schema version, model/feature version, gameplay content version, profile revision, and processed match/event IDs. Writes must be atomic and idempotent so retries do not learn a battle twice. Conflicting updates to one profile need serialization or an explicit merge rule.
 

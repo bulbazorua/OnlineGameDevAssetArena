@@ -1,6 +1,6 @@
-# Arena protocol, version 9
+# Arena protocol, version 11
 
-Version 9 adds trainer idle/walk state, facing and state-start tick to the existing character locomotion records. Player1 now completes a planted first step before translation. Restart host and clients together after updating from version 8. The default five-second audience delay remains. See [Player1 walk timing](05b-player-walk-timing.md).
+Version 11 adds trainer running, authoritative energy and a separate movement-start clock. It retains version 10's public target-found flag and acquisition tick. Restart host and clients together. Private search memory, observations and target identity remain excluded. See [running and alert presentation](05c-trainer-running-and-target-alert.md) and [opponent search](06m-naturalistic-opponent-search.md).
 
 ## Transport and header
 
@@ -13,7 +13,7 @@ One application message per packet. Multibyte integers are explicitly **unsigned
 | Offset | Field | Value |
 | --- | --- | --- |
 | 0–3 | Magic | ASCII `OGAA`, hex `4f 47 41 41` |
-| 4 | Version | `09` |
+| 4 | Version | `0b` |
 | 5 | Kind | The message kind below |
 
 ## Messages
@@ -22,15 +22,16 @@ One application message per packet. Multibyte integers are explicitly **unsigned
 | --- | --- | --- | --- | --- |
 | 1 Hello | Client → host | Join preference `u8`, content fingerprint `32 bytes` | 39 | 0 |
 | 2 Welcome | Host → joining client | Assigned role `u8`, audience delay in milliseconds `u32` | 11 | 0 |
-| 3 SessionState | Host → joined clients | Full state, detailed below | 32 or 138 | 0 |
+| 3 SessionState | Host → joined clients | Full state, detailed below | 32 or 164 | 0 |
 | 4 StartSelection | Player → host | Expected round `u32` | 10 | 0 |
 | 5 SelectCharacter | Player → host | Expected round `u32`, character ID `u16` | 12 | 0 |
 | 6 SetReady | Player → host | Round `u32`, character ID `u16`, map ID `u16`, desired Ready `u8` | 15 | 0 |
 | 7 ReturnToLobby | Player → host | Expected round `u32` | 10 | 0 |
 | 8 CommandRejected | Host → sender | Sender-visible round `u32`, rejected kind `u8`, reason `u8` | 12 | 0 |
 | 9 SelectArena | Player → host | Expected round `u32`, map ID `u16` | 12 | 0 |
-| 10 Input | Player → host | Round `u32`, sequence `u32`, direction mask `u8` | 15 | 1 |
-| 11 WorldState | Host → joined clients | Round `u32`, server tick `u32`, character count `u8`, two gladiators, two trainers, summon ticks `u16`, four locomotion records | 121 | 1 |
+| 10 Input | Player → host | Round `u32`, sequence `u32`, direction/run mask `u8` | 15 | 1 |
+| 11 WorldState | Host → joined clients | Round, tick, two gladiators, two trainers, summon ticks, four locomotion records, two target alerts and two trainer-energy records | 147 | 1 |
+| 12 DevResetSearch | Development player → host | Expected round `u32` | 10 | 0 |
 
 Boolean values must be exactly 0 or 1. Exact message lengths, header, channel, and enum values are validated.
 
@@ -38,21 +39,23 @@ Hello preference 0 requests an available player slot, falling back to audience w
 
 Authority comes from the welcomed connection. Commands never contain a claimed owner or position. Duplicate Hello returns the same Welcome and the latest state allowed for that connection: live for players, historical for delayed audience (or no state while the buffer warms up). It never changes membership. Audience members must reconnect to claim a vacant player slot; there is no automatic promotion.
 
+`DevResetSearch` is a development-only addition within protocol 10; normal state packet layouts are unchanged. It requires a debug host with `--dev --bind=127.0.0.1`, the Search controller and completed summoning. The host validates connected, separated spawn positions before starting a new round with fresh runtime entities and private memories. Clients receive the normal reliable session update; delayed audiences and replay follow their existing timelines. Rejection reasons 9 (`DevOnly`) and 10 (`SearchResetUnavailable`) explain disabled tools or insufficient space. Older running hosts must be restarted before using the new debug command.
+
 ## Shared content fingerprint
 
 Both programs load canonical JSON from `client/content/data/`. The host accepts `--content-dir=<directory>`. The client also validates local character visuals and terrain atlas mappings before connecting.
 
-The active files, in hash order, are **`arenas.json`, `characters.json`, `terrains.json`**. For each file, sorted by relative forward-slash path, SHA-256 receives:
+The active files, in hash order, are **`arenas.json`, `characters.json`, `senses.json`, `terrains.json`**. Olfaction changed `senses.json` to schema 2 and `terrains.json` to schema 3, so the fingerprint differs from earlier builds. For each file, sorted by relative forward-slash path, SHA-256 receives:
 
 ```text
 u32le(path byte length) + UTF-8 relative path + u32le(file byte length) + raw file bytes
 ```
 
-Visual assets and Godot metadata are excluded. JSON whitespace changes affect the fingerprint. Use identical data and restart both programs after content edits. The fingerprint checks compatibility; it is not authentication. Version 9 fixes trainer movement speed at **120 world units/second** and simulation frequency at **60 Hz**; those rules are implemented in both languages and require a protocol update if changed incompatibly.
+Visual assets and Godot metadata are excluded. JSON whitespace changes affect the fingerprint. Use identical data and restart both programs after content edits. The fingerprint checks compatibility; it is not authentication. Trainers walk at **120 world units/second** and run at **240**, at **60 Hz**. These rules and energy tuning are implemented in both languages and require a protocol update if changed incompatibly.
 
 The host checks the fingerprint before assigning membership. Mismatch disconnects with reason 2; the client shows **Update game content**. Invalid catalogs prevent startup or connection. Terrain IDs, rows, spawns, and footprint clearance are validated by both programs.
 
-The current arena catalog uses **schema 2**: each map includes matching `rows` and `elevation_rows`, whose digits encode levels 0–3. Both sides reject malformed height rows. Legacy schema-1 maps are flat and remain supported for fixtures; older readers reject schema 2. Terrain and character catalogs remain schema 1. This content-schema change does not alter the version-8 wire layouts below.
+The current arena catalog uses **schema 2**: each map includes matching `rows` and `elevation_rows`, whose digits encode levels 0–3. Both sides reject malformed height rows. Legacy schema-1 maps are flat and remain supported for fixtures; older readers reject schema 2. The terrain catalog is **schema 3** and requires an explicit `blocks_vision` boolean and a `scent` medium (`open`, `water` or `solid`) per terrain, each independent of `walkable` (water blocks walking, not sight, and carries scent briefly). `senses.json` (schema 2) holds profiles with a `vision` object and an `olfaction` object (`receptor`: enabled, `range_units` 0–32, `sample_interval_ticks` 1–60, `estimates_freshness`; `emitter`: enabled, `scent_class` human/orc, `intensity` 0–4), one `trainer_emitter`, and exactly one binding per selectable character; see [checkpoint 6B.1](06g-focused-and-peripheral-vision.md) and [6B.2](06n-olfactory-trails.md). The character catalog remains schema 1. These content-schema versions are separate from the version-11 wire layouts below.
 
 ## SessionState layout
 
@@ -76,6 +79,8 @@ The current arena catalog uses **schema 2**: each map includes matching `rows` a
 | 112–113 | Summon elapsed ticks | `u16`, 0–90; InArena only |
 | 114, 120 | Gladiator locomotion records | 6 bytes each, same order as gladiator records; InArena only |
 | 126, 132 | Trainer locomotion records | 6 bytes each, same order as trainer records; InArena only |
+| 138, 143 | Creature target-alert records | 5 bytes each: active `u8` (0/1), acquisition tick `u32`; InArena only |
+| 148, 156 | Trainer energy records | 8 bytes each; InArena only; layout below |
 
 Welcome precedes the first full state on channel 0. Its delay field is at offset 7, unsigned little-endian milliseconds, range 0–60,000; fighters must receive zero. Players receive live full states when membership, phase, picks, readiness, or countdown change. Audience receives the same information from the host history after its configured delay (default 5,000 ms), sampled at up to 20 Hz. Late viewers receive the newest eligible historical state, never the current live countdown/positions. No state is sent during initial history warmup. See [audience delay](03i-audience-delay.md).
 
@@ -95,7 +100,7 @@ Every gladiator or trainer record uses these offsets relative to its start:
 | 7–10 | X | `u32`, world units × 256, rounded |
 | 11–14 | Y | `u32`, world units × 256, rounded |
 | 15–18 | Acknowledged input sequence | `u32`, latest input used by a simulation step |
-| 19 | Direction mask | `u8`, current host input direction |
+| 19 | Input mask | `u8`, current host direction/run request; zero for autonomous creatures |
 
 WorldState has round at offset 6, server tick at 10, character count at 14 (always 2), gladiator records at 15 and 35, trainer records at 55 and 75, summon elapsed ticks at 95, and gladiator locomotion records at 97 and 103, and trainer locomotion records at 109 and 115. Gladiator input masks and acknowledgments must be zero. Trainer masks must be zero during summoning. Neither packet includes a separate trainer count: two trainers are required whenever two gladiators exist. The host sends full world state every third simulation tick, **20 Hz**. Snapshots carry no deltas, so one lost packet does not prevent decoding the next.
 
@@ -103,7 +108,7 @@ Each six-byte locomotion record has:
 
 | Relative offset | Field | Encoding |
 | --- | --- | --- |
-| 0 | Locomotion | `u8`: 0 idle, 1 walk |
+| 0 | Locomotion | `u8`: 0 idle, 1 walk, 2 run (trainers only) |
 | 1 | Facing | `u8`: 0 north, 1 north_east, 2 east, 3 south_east, 4 south, 5 south_west, 6 west, 7 north_west |
 | 2–5 | State start tick | `u32`; tick when locomotion last changed (spawn tick initially) |
 
@@ -113,6 +118,20 @@ The client rejects unknown values, future state-start ticks (serial comparison),
 walking during summoning, or regressing state-start ticks within a stable entity.
 Elapsed animation time uses wrap-safe subtraction. Stable locomotion does not
 reset its start tick on each packet.
+
+Trainer energy records are at offsets **131, 139** in WorldState and **148, 156**
+in SessionState:
+
+| Relative offset | Field | Encoding |
+| --- | --- | --- |
+| 0–1 | Energy | `u16`, 0–600 |
+| 2 | Recovery delay remaining | `u8`, 0–60 ticks |
+| 3 | Exhausted lock | `u8`, 0/1 |
+| 4–7 | Movement start tick | `u32`, no later than the action start tick |
+
+The movement clock preserves the original first-step preparation across walk/run
+switches. The locomotion clock still starts each new animation. Audience history
+and recorded world frames retain both clocks and energy values.
 
 Clients ignore older/equal world ticks, packets from other rounds, and world packets received outside InArena. Serial comparison handles `u32` wraparound. Reliable membership updates can arrive after newer world updates; the client keeps the newer positions while applying the updated membership/revision.
 
@@ -135,7 +154,14 @@ The client interpolates only between received summon values, freezes on a paused
 
 ## Input, simulation, and presentation
 
-Input offsets are round at 6, sequence at 10, and mask at 14. Direction bits are **Left=1, Right=2, Up=4, Down=8**; zero stops. Opposites cancel and diagonals are normalized. Bits outside 0–15 are malformed.
+Input offsets are round at 6, sequence at 10, and mask at 14. Bits are **Left=1, Right=2, Up=4, Down=8, Run=16**; zero stops. Run without a direction does not move or spend energy. Opposites cancel and diagonals are normalized. Bits outside 0–31 are malformed.
+
+Each trainer begins with 600 energy. A translated running tick spends 2, allowing
+300 running ticks (five seconds). A run step resets a 60-tick recovery delay;
+walking or resting then restores one energy per tick. Exhaustion falls back to
+walking and locks running until energy reaches 120 and Space has been released.
+No client command can set energy. Summon locks, input timeout and collision apply
+to both speeds. All resource and movement fields participate in reconciliation.
 
 The client sends input every physics tick (60 Hz), including zero-mask heartbeats. The host retains only newer sequences for that connection's trainer; duplicates/older inputs are ignored without a reliable reply. Input cannot advance simulation. The host moves trainers only at fixed steps, stops input after **15 steps without a newer heartbeat** (250 ms), and never accepts client coordinates. Packet bursts cannot increase movement speed. Initial input sequence is zero; the first normal sample is one.
 
@@ -146,11 +172,13 @@ The owner immediately predicts the walk action. Translation begins after 8 prepa
 ## Autonomous character authority
 
 The Odin `Simulation` owns private `Battle_Runtime` beside the public `Session`.
-The host's default `idle_wander` controller begins after summoning, proposes Hold
-or Move, and shared action/collision rules produce the public fields. Current
-movement speed is 64 world units/second within a 128-unit radius of each summon
-position. Settings are host-owned: clients do not predict AI or consume its RNG.
-No AI command packet is accepted from fighters or audience.
+The host's default `Search` controller begins after summoning and proposes actions
+from its own visual evidence and private history. The stationary `Observe`
+controller remains available for receptor QA. Shared action rules produce the
+public locomotion fields; turning changes facing by one 45° step per six ticks
+without translation. Settings are host-owned: clients do not predict AI. Private
+sightings, cues, scent readings, memory and the host scent field never appear in
+player or audience packets. No AI command packet is accepted from fighters or audience.
 
 `walk` begins with 12 ticks of stationary first-step preparation. Its state-start
 tick includes that preparation; the first displacement is at start + 12. A legal
@@ -177,11 +205,17 @@ Well-formed commands that violate session rules receive CommandRejected and rema
 | 6 NeedTwoPlayers | Start requires both slots |
 | 7 UnknownArena | Map ID is absent from the host catalog |
 | 8 ArenaChanged | Ready names a different arena |
+| 9 DevOnly | Search reset requires a local debug host running Search |
+| 10 SearchResetUnavailable | Connected ground cannot fit separated search spawns |
 
 Malformed messages disconnect with reason **1**; content mismatch uses **2**. Membership is released exactly once. Host loss clears local identity, session, camera, and characters and returns the client to Lobby.
 
-The host supports **4,095 total connections**, matching [ENet 1.3.17's peer limit](https://github.com/lsalzman/enet/blob/v1.3.17/include/enet/protocol.h). With two fighters, up to 4,093 slots are available for audience. This is a transport ceiling, not a measured viewer capacity. Hello/Welcome timeout is five seconds. ENet timeout factor is 32, minimum 1500 ms, maximum 5000 ms. Host packet cap is **160 bytes**, queued incoming data cap **4096 bytes per peer**.
+The host supports **4,095 total connections**, matching [ENet 1.3.17's peer limit](https://github.com/lsalzman/enet/blob/v1.3.17/include/enet/protocol.h). With two fighters, up to 4,093 slots are available for audience. This is a transport ceiling, not a measured viewer capacity. Hello/Welcome timeout is five seconds. ENet timeout factor is 32, minimum 1500 ms, maximum 5000 ms. Host packet cap is **256 bytes**, queued incoming data cap **4096 bytes per peer**.
 
 Implementations: [Odin codec](../server/protocol.odin), [session rules](../server/session.odin), [movement](../server/movement.odin), [Godot codec](../client/network/protocol.gd), [connection](../client/network/game_connection.gd), and [arena presentation](../client/world/game_arena.gd). `make check` covers the content, session, connection, selection, countdown, movement, and camera checks.
 
 Audience command rejection replies use the latest released historical round ID (zero before any history is available). They never expose the live round. Transport Welcome/disconnect and ENet ping remain immediate; gameplay, membership, and reset state use the delayed timeline.
+
+## Target-found presentation
+
+WorldState appends the same two five-byte records at offsets 121 and 126. An active alert is younger than 60 simulation ticks. Repeated packets preserve the original acquisition tick. This conveys a visible reaction only, with no target coordinates, identity or brain state. Delayed audiences use their historical session state. Protocol-9 and protocol-10 recordings use an explicit replay adapter. Version 9 receives inactive alerts; both old formats receive full trainer energy, no exhaustion and movement clocks copied from their old action clocks. Live transport rejects older versions. The creature body hop and its fixed ground shadow are sampled from acquisition age; replay pause and seek do not start local tweens.

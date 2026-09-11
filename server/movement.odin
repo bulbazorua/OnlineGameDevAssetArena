@@ -14,11 +14,13 @@ Character :: struct {
     position: [2]f32,
     pending_input_sequence: u32,
     applied_input_sequence: u32,
-    input_mask: u8, // Left=1, Right=2, Up=4, Down=8.
+    input_mask: u8, // Left=1, Right=2, Up=4, Down=8; trainers can also hold Run=16.
     input_age_ticks: u16,
     locomotion: Character_Locomotion,
     facing: Character_Facing,
     state_start_tick: u32,
+    target_alert: bool,
+    target_acquired_tick: u32,
 }
 
 serial_is_newer :: proc(value, previous: u32) -> bool {
@@ -30,11 +32,11 @@ session_countdown_seconds :: proc(session: ^Session) -> u8 {
     return u8((session.countdown_ticks + SIMULATION_HZ - 1) / SIMULATION_HZ)
 }
 
-character_move :: proc(position: [2]f32, mask: u8, radius: f32, arena: ^Arena_Definition, content: ^Game_Content) -> [2]f32 {
+character_move :: proc(position: [2]f32, mask: u8, radius: f32, arena: ^Arena_Definition, content: ^Game_Content, speed: f32 = CHARACTER_SPEED) -> [2]f32 {
     direction := [2]f32{f32((mask >> 1) & 1) - f32(mask & 1), f32((mask >> 3) & 1) - f32((mask >> 2) & 1)}
     length := math.sqrt(direction.x * direction.x + direction.y * direction.y)
     if length == 0 { return position }
-    delta := direction * (CHARACTER_SPEED / SIMULATION_HZ / length)
+    delta := direction * (speed / SIMULATION_HZ / length)
     result, _ := movement_apply_delta(position, delta, radius, arena, content)
     return result
 }
@@ -89,9 +91,10 @@ session_enter_arena :: proc(session: ^Session, content: ^Game_Content) {
     session.summon_elapsed_ticks = 0
     for index in 0..<MAX_PLAYERS {
         session.trainers[index] = Trainer{
-            entity_id = session_next_entity(session), definition_id = TRAINER_DEFINITION_ID,
-            owner_id = u8(index + 1), position = arena_cell_center(arena, arena.spawns[index]),
-            facing = .East if index == 0 else .West, state_start_tick = session.server_tick,
+            body = {entity_id = session_next_entity(session), definition_id = TRAINER_DEFINITION_ID,
+                owner_id = u8(index + 1), position = arena_cell_center(arena, arena.spawns[index]),
+                facing = .East if index == 0 else .West, state_start_tick = session.server_tick},
+            energy = TRAINER_ENERGY_MAX, movement_start_tick = session.server_tick,
         }
     }
     for player, index in session.players {

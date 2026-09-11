@@ -93,7 +93,7 @@ func display_session(state: SessionSnapshot) -> void:
 	title_label.text = "%s  ·  %s  ·  %d watching" % [world.definition.display_name, role, state.audience_count]
 	return_button.visible = network.player_id != 0
 	%AudienceControls.visible = network.player_id == 0
-	controls_label.text = "Wheel / + −: zoom · Right / middle drag or WASD: pan · 0: reset · 1 / 2: follow" if network.player_id == 0 else "WASD / Arrows: move your trainer · Characters roam independently"
+	controls_label.text = "Wheel / + −: zoom · Right / middle drag or WASD: pan · 0: reset · 1 / 2: follow" if network.player_id == 0 else "WASD / Arrows: move · Hold Space: run · Characters search on their own"
 	var names: Array[String] = []
 	for index in 2:
 		names.append("P%d · %s" % [index + 1, content.by_id[state.players[index].character_id].display_name])
@@ -212,6 +212,7 @@ func _process(delta: float) -> void:
 		var age := float((_predicted_tick - _predicted_trainer.state_start_tick) & 0xffffffff) / 60.0 + _local_motion_elapsed
 		trainer_views[_local_entity].present_locomotion(GameProtocol.LOCOMOTION_NAMES[_predicted_trainer.locomotion], GameProtocol.FACING_NAMES[_predicted_trainer.facing], age)
 	_present_summon(weight)
+	%TrainerEnergy.present(_predicted_trainer, network.player_id, snapshot != null and snapshot.summon_elapsed_ticks < GameProtocol.SUMMON_DURATION_TICKS)
 	_update_camera(delta)
 
 
@@ -234,7 +235,7 @@ func _unhandled_key_input(event: InputEvent) -> void:
 			_update_camera()
 			get_viewport().set_input_as_handled()
 		return
-	if key not in [KEY_A, KEY_D, KEY_W, KEY_S, KEY_LEFT, KEY_RIGHT, KEY_UP, KEY_DOWN]:
+	if key not in [KEY_A, KEY_D, KEY_W, KEY_S, KEY_LEFT, KEY_RIGHT, KEY_UP, KEY_DOWN, KEY_SPACE]:
 		return
 	if event.pressed:
 		_pressed_keys[key] = true
@@ -249,6 +250,7 @@ func input_mask() -> int:
 	if _pressed_keys.has(KEY_D) or _pressed_keys.has(KEY_RIGHT): mask |= CharacterMovement.RIGHT
 	if _pressed_keys.has(KEY_W) or _pressed_keys.has(KEY_UP): mask |= CharacterMovement.UP
 	if _pressed_keys.has(KEY_S) or _pressed_keys.has(KEY_DOWN): mask |= CharacterMovement.DOWN
+	if _pressed_keys.has(KEY_SPACE): mask |= GameProtocol.TRAINER_RUN_INPUT
 	return mask
 
 
@@ -297,6 +299,7 @@ func _clear_characters() -> void:
 	_summon_from = 0.0
 	_summon_display_tick = 0.0
 	_predicted_trainer = null
+	if is_node_ready(): %TrainerEnergy.hide()
 	_predicted_tick = 0
 	_local_motion_elapsed = 0.0
 	_pressed_keys.clear()

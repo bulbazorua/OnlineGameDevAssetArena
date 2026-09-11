@@ -4,6 +4,8 @@ const Store = preload("res://dev/ai/replay_store.gd")
 const Stage = preload("res://dev/ai/replay_stage.gd")
 const Graph = preload("res://dev/ai/decision_graph.gd")
 const Palette = preload("res://dev/ai/trace_palette.gd")
+const VisionView = preload("res://dev/ai/vision_view.gd")
+const Trace = preload("res://dev/ai/trace_reader.gd")
 const Content = preload("res://content/game_content.gd")
 var content := Content.new()
 var store: RefCounted
@@ -28,6 +30,7 @@ var _seek: HSlider
 var _tabs: TabContainer
 var stage: SubViewportContainer
 var _graphs: Array[Control] = []
+var _visions: Array[Control] = []
 var _details: Array[TextEdit] = []
 var _trace_labels: Array[Label] = []
 var _traces: Dictionary = {}
@@ -122,15 +125,29 @@ func _build_ui() -> void:
 		_button("◀ Event", controls, func(): step_trace(owner, -1))
 		_button("Event ▶", controls, func(): step_trace(owner, 1))
 		_button("Full trace", controls, func(): step_trace(owner, 100))
+		var host_toggle := CheckButton.new()
+		host_toggle.text = "Host diagnostics"
+		controls.add_child(host_toggle)
 		var legend := HFlowContainer.new()
 		pane.add_child(legend)
 		for status: String in ["Selected", "Passed", "Rejected", "Resolved", "Skipped", "Unavailable"]:
 			_label("● " + Palette.LABELS[status] + "  ", legend, 11).modulate = Palette.color(status)
+		var split := HSplitContainer.new()
+		split.size_flags_vertical = Control.SIZE_EXPAND_FILL
+		pane.add_child(split)
 		var graph := Graph.new()
+		graph.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		graph.size_flags_vertical = Control.SIZE_EXPAND_FILL
-		graph.node_selected.connect(func(node): _details[owner - 1].text = JSON.stringify(node, "  "))
-		pane.add_child(graph)
+		graph.node_selected.connect(func(node): _details[owner - 1].text = JSON.stringify({"event": node, "evidence": Trace.evidence_for(_traces[owner], int(node.get("reference", 0)), int(node.get("subject", 0))) if _traces.has(owner) else {}}, "  "))
+		split.add_child(graph)
 		_graphs.append(graph)
+		var vision := VisionView.new()
+		vision.content = content
+		vision.custom_minimum_size.x = 460
+		vision.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		split.add_child(vision)
+		_visions.append(vision)
+		host_toggle.toggled.connect(func(pressed: bool): vision.host_view = pressed; _render_trace())
 		var details := TextEdit.new()
 		details.editable = false
 		details.custom_minimum_size.y = 120
@@ -254,12 +271,25 @@ func _render_trace() -> void:
 	var trace: Dictionary = _traces[owner]
 	var cursor: int = _cursors[owner - 1]
 	graph.present(trace, cursor)
-	_trace_labels[owner - 1].text = "P%d · entity %d · tick %d · %s → %s · event %d / %d" % [owner, int(trace.input.entity_id), int(trace.input.tick), trace.decision_reason, trace.result.kind, cursor, trace.nodes.size()]
-	_details[owner - 1].text = JSON.stringify({"received": trace.input, "requested": trace.after.last.requested, "confirmed": trace.result}, "  ")
+	_visions[owner - 1].present(trace, cursor, _visions[owner - 1].host_view)
+	var sample_text := ""
+	if int(trace.get("schema_version", 1)) >= 2:
+		var sample: Dictionary = trace.input.senses.vision
+		sample_text = " · eye sample #%d at tick %d (age %d, %s)" % [int(sample.sample_id), int(sample.sample_tick), (int(trace.input.tick) - int(sample.sample_tick)) & 0xffffffff, sample.status]
+	else:
+		sample_text = " · schema 1 wander record"
+	if int(trace.get("schema_version", 1)) >= 4:
+		var nose: Dictionary = trace.input.senses.olfaction
+		sample_text += " · nose sample #%d at tick %d (%d readings, %s)" % [int(nose.sample_id), int(nose.sample_tick), int(nose.reading_count), nose.status]
+	elif int(trace.get("schema_version", 1)) >= 2:
+		sample_text += " · olfaction not recorded in this schema"
+	_trace_labels[owner - 1].text = "P%d · entity %d · tick %d · %s → %s · event %d / %d%s" % [owner, int(trace.input.entity_id), int(trace.input.tick), trace.decision_reason, trace.result.kind, cursor, trace.nodes.size(), sample_text]
+	_details[owner - 1].text = JSON.stringify({"received": trace.input, "requested": trace.after.last.requested, "confirmed": trace.result, "private_search": trace.after.get("search", {}), "private_scent_memory": trace.after.get("scent", "not recorded in this schema"), "host_scent_field": "not recorded; the live field is never read for an old frame"}, "  ")
 
 func _refresh_status() -> void:
 	if _status == null: return
 	_play.text = "Pause" if playing else "Play"
 	_status.text = ("LOADING" if _loading else "PLAYING" if playing else "PAUSED") + " · " + _path
+	if not header.is_empty(): _status.text += " · replay schema %d / trace schema %d" % [int(header.get("schema_version", 1)), int(header.get("trace_schema", 1))]
 	if not _warning.is_empty(): _status.text += "\n" + _warning
 	if not _notice.is_empty(): _status.text += "\n" + _notice

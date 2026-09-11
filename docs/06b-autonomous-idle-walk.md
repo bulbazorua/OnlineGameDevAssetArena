@@ -1,6 +1,11 @@
 # Checkpoint 6A: autonomous idle and walk
 
-Implemented: summoned characters independently walk and idle on the Odin host.
+Historical record. [Checkpoint 6B.1](06g-focused-and-peripheral-vision.md) replaced the
+default `idle_wander` controller and its private RNG with the deterministic Observe tactic;
+the shared Move capability, its resolver rules and presentation timing below remain in place
+and tested, but no default tactic requests translation any more.
+
+Implemented in 6A: summoned characters independently walk and idle on the Odin host.
 The [architecture proposal](06-character-ai-orchestration-proposal.md) remains the
 roadmap for senses, composable strategies, trainer advice and learning. Those later
 features are not implemented by this checkpoint.

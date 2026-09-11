@@ -31,6 +31,25 @@ def wait(condition, message: str, timeout: float = 60):
     raise AssertionError(f"Timed out: {message}")
 
 
+def leaks_host_fields(value) -> bool:
+    """Brain-side data must never carry host audit fields, even as attachments."""
+    if isinstance(value, dict):
+        return any(key in ("verdict", "candidates", "host_audit", "sight_tests", "origin_opaque", "host_scent_audit", "cells_sampled", "cells_blind", "peak", "coherence") or leaks_host_fields(item) for key, item in value.items())
+    if isinstance(value, list):
+        return any(leaks_host_fields(item) for item in value)
+    return False
+
+
+def journal_records(traces: Path, owner: int) -> list[dict]:
+    """Every complete decision for one creature, oldest first, across rotated segments."""
+    records = []
+    for name in (f"ai-{owner}.jsonl.3", f"ai-{owner}.jsonl.2", f"ai-{owner}.jsonl.1", f"ai-{owner}.jsonl"):
+        path = traces / name
+        if path.exists():
+            records.extend(json.loads(line) for line in path.read_text().splitlines() if line.endswith("}"))
+    return records
+
+
 def checked(command: list[str], log: Path, timeout: int = 60):
     with log.open("w") as output:
         result = subprocess.run(command, cwd=ROOT, stdout=output, stderr=subprocess.STDOUT, timeout=timeout)
@@ -61,8 +80,11 @@ def main():
                        "    args = ['--script', " + repr(str(sandbox / "tests/dev_client_driver.gd")) + "] + args\n"
                        "os.execvp(" + repr(args.godot) + ", [" + repr(args.godot) + "] + args)\n")
     wrapper.chmod(0o755)
+    # Same-definition creatures on the staged close-quarters QA arena, so real
+    # peripheral cues, focused sightings and memory flow through production sensing.
     base = [sys.executable, str(sandbox / "tools/dev_session.py"), "--godot", str(wrapper), "--odin", args.odin,
-            "--p1", "archer", "--p2", "archer", "--seed", "42", "--ai-debug", "1", "--audience", "1", "--audience-delay", "1"]
+            "--p1", "archer", "--p2", "archer", "--seed", "42", "--ai-debug", "1", "--observe-only", "--audience", "1", "--audience-delay", "1",
+            "--arena", "vision_range", "--qa-arena", "client/dev/fixtures/content/vision_range.arenas.json"]
     if not args.graphical:
         base.append("--headless")
     process = None
@@ -84,30 +106,70 @@ def main():
 
         initial = session()
         assert initial["ai_slots"] == ["ai1", "ai2"], (initial, (sandbox / "runner.log").read_text())
+        assert initial["senses_slots"] == ["senses1", "senses2"]
         wait(lambda: all(s.get("bound") and s.get("last_sequence", 0) > 180 for s in statuses()), "live trace histories")
         states = statuses()
+        # Both creatures noticed each other at the edge of vision, turned one step
+        # toward the cue and now hold with the other in focus; nobody translated.
+        p1 = read(directory / "p1.json")
+        wait(lambda: all(read(directory / f"p{i}.json").get("senses", {}).get("visible") for i in (1, 2)), "live vision cones in both arenas")
+        assert not read(directory / "audience1.json")["senses"]["visible"], "Audience borrowed live sensory evidence"
+        assert sorted(c["facing"] for c in p1["characters"]) == [3, 7], p1["characters"]
+        assert all(c["locomotion"] == 0 for c in p1["characters"]), p1["characters"]
         (directory / "driver.json").write_text(json.dumps({"sequence": 1, "move": True}))
         wait(lambda: read(directory / "driver-p1.json").get("sequence") == 1, "real trainer input for QA recording")
         assert all(s["reader_error"] == "" and s["nodes"] > 0 for s in states), states
+        # P1 follows live decisions; P2's driver paused before its first decision and must show that decision, not nothing.
+        assert not states[0]["paused"] and states[0]["selected_sequence"] == states[0]["last_sequence"], states[0]
+        assert states[1]["paused"] and states[1]["selected_sequence"] >= 1 and states[1]["last_sequence"] > states[1]["selected_sequence"], states[1]
         assert states[0]["worker_id"] != states[1]["worker_id"]
         trace_dir = Path(initial["ai_trace_dir"])
+        sensory = read(trace_dir / "senses.json")
+        assert sensory["run_id"] == initial["ai_run"] and len(sensory["records"]) == 2
+        assert (trace_dir / "senses.json").stat().st_size <= 32 * 1024
+        for record in sensory["records"]:
+            assert set(record) == {"owner_id", "entity_id", "round_id", "tick", "definition_id", "map_id", "delivered_us", "vision", "sight_fan", "scent_delivered_us", "olfaction", "own_emitter"}
+            matching = [r for r in journal_records(trace_dir, record["owner_id"]) if r["input"]["tick"] == record["tick"]]
+            assert matching and record["vision"] == matching[-1]["input"]["senses"]["vision"]
+            assert record["olfaction"] == matching[-1]["input"]["senses"]["olfaction"], "Arena nose sample differs from debugger evidence"
+            assert record["sight_fan"] == matching[-1]["sight_fan"], "Arena fan differs from debugger evidence"
         for owner in (1, 2):
             snapshot = read(trace_dir / f"ai-{owner}.json")
-            assert snapshot["owner_id"] == owner and snapshot["dropped_records"] == 0 and not snapshot["writer_error"]
+            assert snapshot["schema_version"] == 4 and snapshot["owner_id"] == owner and snapshot["dropped_records"] == 0 and snapshot["oversized_records"] == 0 and not snapshot["writer_error"]
+            reasons = set()
             for record in snapshot["records"]:
-                assert record["owner_id"] == owner and record["input"]["entity_id"] == record["after"]["entity_id"]
+                assert record["schema_version"] == 4 and record["owner_id"] == owner and record["input"]["entity_id"] == record["after"]["entity_id"]
                 assert record["nodes"][0]["thread_id"] == record["worker_id"]
                 assert record["nodes"][-1]["stage"] == "Outcome"
                 assert record["nodes"][-1]["thread_id"] != record["worker_id"], "Action applied on AI worker"
+                sample = record["input"]["senses"]["vision"]
+                assert sample["observer"] == record["input"]["entity_id"] and sample["sample_tick"] <= record["input"]["tick"]
+                assert not leaks_host_fields(record["input"]) and not leaks_host_fields(record["before"]) and not leaks_host_fields(record["after"]), "host audit reached brain-side data"
+                for index in range(sample["cue_count"]):
+                    assert set(sample["cues"][index]) == {"observation_id", "sector", "band"}, sample["cues"][index]
+                reasons.add(record["decision_reason"])
+            # Journals rotate at 8 MiB, so the first decisions may already sit in an older segment.
+            journal = journal_records(trace_dir, owner)
+            assert journal and max(len(json.dumps(record, separators=(",", ":"))) for record in journal) <= snapshot["record_limit_bytes"] + 1024
+            observed = [r for r in journal if r["decision_reason"] == "Observe"]
+            assert observed and observed[0]["input"]["senses"]["vision"]["focused_count"] >= 1, reasons
+            oriented = [r for r in journal if r["decision_reason"] == "Orient"]
+            assert oriented and oriented[0]["input"]["senses"]["vision"]["cue_count"] == 1 and oriented[0]["result"]["kind"] == "Turned", reasons
         if args.graphical:
+            (directory / "driver.json").write_text(json.dumps({"sequence": 2, "capture": True, "senses": True}))
+            wait(lambda: all(read(directory / f"driver-p{i}.json").get("sequence") == 2 for i in (1, 2)), "native arena cone captures")
             windows = subprocess.check_output(["wmctrl", "-lp"], text=True)
             (sandbox / "native-windows.txt").write_text(windows)
             for state in states:
                 assert any(int(line.split()[2]) == state["pid"] and "AI DEBUG" in line for line in windows.splitlines())
         (directory / "ai-driver.json").write_text(json.dumps({"sequence": 1}))
         wait(lambda: all(read(directory / f"driver-ai{i}.json").get("passed") for i in (1, 2)), "tree stepping, pinned playback, filters, journal replay")
+        assert not read(directory / "driver-ai1.json")["early_pause"] and read(directory / "driver-ai2.json")["early_pause"]
         checked([args.godot, "--headless", "--path", str(Path(initial["active"]) / "client"), "--script", str(ROOT / "tests/ai_trace_check.gd"),
-                 "--", f"--fixture={trace_dir / 'ai-1.json'}"], sandbox / "reader-check.log")
+                 "--", f"--fixture={trace_dir / 'ai-1.json'}", f"--legacy={ROOT / 'tests/fixtures/ai/legacy-schema1-snapshot.json'}"], sandbox / "reader-check.log")
+        for owner in (1, 2):
+            driver = read(directory / f"driver-ai{owner}.json")
+            assert driver["decision_reason"] in ("Orient", "Observe") and driver["sample_tick"] <= driver["decision_tick"], driver
         before = read(directory / "p1.json")["tick"]
         # Close just one native inspector, or its process in headless mode.
         if args.graphical:
@@ -143,10 +205,10 @@ def main():
         playback = [args.godot, "--path", str(Path(initial["active"]) / "client"), "--script", str(ROOT / "tests/replay_check.gd")]
         if not args.graphical:
             playback.append("--headless")
-        checked(playback + ["--", "--dev", f"--replay={initial['replay_path']}", f"--artifacts={sandbox}"], sandbox / "replay-check.log", timeout=90)
+        checked(playback + ["--", "--dev", f"--replay={initial['replay_path']}", f"--artifacts={sandbox}", f"--legacy={ROOT / 'tests/fixtures/ai/legacy-schema1-replay.jsonl'}"], sandbox / "replay-check.log", timeout=90)
         checked(base + ["--ai-debug", "0", "--watch", "0", "--run-seconds", "1"], sandbox / "disabled.log")
         disabled = [read(p) for p in (sandbox / "build/dev").glob("*/session.json") if read(p).get("scenario", {}).get("ai_debug") == 0]
-        assert len(disabled) == 1 and disabled[0]["ai_slots"] == [] and not Path(disabled[0]["ai_trace_dir"]).exists()
+        assert len(disabled) == 1 and disabled[0]["ai_slots"] == [] and disabled[0]["senses_slots"] == [] and not Path(disabled[0]["ai_trace_dir"]).exists()
         # An inspector that exits before its first frame must be reported as an
         # incomplete debug launch, while the required game processes still run.
         previous_runs = set((sandbox / "build/dev").glob("*/session.json"))
@@ -163,10 +225,10 @@ def main():
         rejected = subprocess.run([str(sandbox / "host-release"), "--dev", f"--dev-ai-dir={sandbox / 'forbidden'}", "--dev-ai-run=test"], cwd=ROOT, capture_output=True, text=True, timeout=5)
         assert rejected.returncode != 0 and "debug host build" in rejected.stderr and not (sandbox / "forbidden").exists()
         for log in (sandbox / "build/dev").glob("*/generation-*/*.log"):
-            if log.name in ("ai1.log", "ai2.log", "p1.log", "p2.log", "host.log", "audience1.log"):
+            if log.name in ("ai1.log", "ai2.log", "senses1.log", "senses2.log", "p1.log", "p2.log", "host.log", "audience1.log"):
                 text = log.read_text()
                 assert "SCRIPT ERROR:" not in text and "ERROR:" not in text, f"{log}\n{text[-2000:]}"
-        print("PASS: dedicated threads, actual branches, responsive inspectors, downward graphs, recorded match playback, bounded logs, optional close, incomplete launch reporting, reload, audience isolation, release gate and cleanup.", flush=True)
+        print("PASS: dedicated threads, real peripheral/focused evidence, brain-side isolation, responsive inspectors, downward graphs, recorded match playback with retained samples, bounded logs, optional close, incomplete launch reporting, reload, audience isolation, release gate and cleanup.", flush=True)
     finally:
         if process is not None and process.poll() is None:
             process.send_signal(signal.SIGTERM)

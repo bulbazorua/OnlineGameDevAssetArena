@@ -57,8 +57,8 @@ audience_delay_zero_and_welcome_contract :: proc(t: ^testing.T) {
     live: Session
     testing.expect(t, !audience_advance(&stream, &live, 60 * time.Second))
     testing.expect(t, len(stream.frames) == 0 && !stream.has_latest)
-    testing.expect(t, protocol_encode_welcome(0, 5000) == [11]u8{'O', 'G', 'A', 'A', 9, 2, 0, 136, 19, 0, 0})
-    testing.expect(t, protocol_encode_welcome(1) == [11]u8{'O', 'G', 'A', 'A', 9, 2, 1, 0, 0, 0, 0})
+    testing.expect(t, protocol_encode_welcome(0, 5000) == [11]u8{'O', 'G', 'A', 'A', 11, 2, 0, 136, 19, 0, 0})
+    testing.expect(t, protocol_encode_welcome(1) == [11]u8{'O', 'G', 'A', 'A', 11, 2, 1, 0, 0, 0, 0})
     maximum := audience_init(MAX_AUDIENCE_DELAY_MS)
     defer audience_destroy(&maximum)
     testing.expect(t, len(maximum.frames) == 1202)

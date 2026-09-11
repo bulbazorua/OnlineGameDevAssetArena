@@ -25,9 +25,14 @@ class CharacterState extends EntityState:
 	var locomotion := 0
 	var facing := 0
 	var state_start_tick := 0
+	var target_alert := false
+	var target_acquired_tick := 0
 
 class TrainerState extends CharacterState:
-	pass
+	var energy := 600
+	var energy_recovery_ticks := 0
+	var run_exhausted := false
+	var movement_start_tick := 0
 
 var countdown_seconds := 0
 var server_tick := 0

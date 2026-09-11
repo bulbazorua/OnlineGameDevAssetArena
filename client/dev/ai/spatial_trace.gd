@@ -13,6 +13,9 @@ func present(value: Dictionary, count: int) -> void:
 func _draw() -> void:
 	draw_style_box(_background(), Rect2(Vector2.ZERO, size))
 	if record.is_empty(): return
+	if int(record.get("schema_version", 1)) != 1:
+		draw_string(ThemeDB.fallback_font, Vector2(16, 28), "Schema-2 observation record: open the Vision tab. This legacy view draws only schema-1 wander data.", HORIZONTAL_ALIGNMENT_LEFT, -1, 14, Color("e8c578"))
+		return
 	var input: Dictionary = record.input
 	var anchor := Vector2(input.anchor[0], input.anchor[1])
 	var position := Vector2(input.position[0], input.position[1])
@@ -46,7 +49,7 @@ func _draw() -> void:
 			var after := Vector2(record.position_after[0], record.position_after[1])
 			draw_circle(center + (after - anchor) * scale_factor, 13, Color("75d6a3"), false, 2)
 	draw_string(font, Vector2(16, size.y - 39), "Cyan: requested direction   Green ring: resolved position", HORIZONTAL_ALIGNMENT_LEFT, -1, 12, Color("a6b8cb"))
-	draw_string(font, Vector2(16, size.y - 18), "Vision is not implemented. This is not a sensed world map.", HORIZONTAL_ALIGNMENT_LEFT, -1, 12, Color("e8c578"))
+	draw_string(font, Vector2(16, size.y - 18), "Historical schema-1 wander record: no eyes were recorded. This is not a sensed world map.", HORIZONTAL_ALIGNMENT_LEFT, -1, 12, Color("e8c578"))
 
 
 func _arrow(start: Vector2, end: Vector2, color: Color, width: float) -> void:

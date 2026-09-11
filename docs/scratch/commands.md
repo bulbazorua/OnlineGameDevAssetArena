@@ -8,3 +8,5 @@ make character_harness CHARACTER=lancer
 make character_harness CHARACTER=warrior
 make character_harness CHARACTER=monk
 make player_harness PLAYER=player1
+make dev_vision P1=archer P2=orc
+make dev_arena P1=archer P2=orc ARENA=tiny_swords_village AI_DEBUG=1

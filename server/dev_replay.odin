@@ -5,16 +5,22 @@ import "core:fmt"
 import "core:os"
 
 REPLAY_LIMIT_BYTES :: 128 * 1024 * 1024
+// Envelope 4 carries olfaction and search traces; historical readers keep their own schemas.
+REPLAY_SCHEMA :: 4
+// A frame line must stay below the reader's 128 KiB cap; oversized frames keep
+// the world packet and drop their traces, which the end record counts.
+REPLAY_LINE_LIMIT :: 120 * 1024
 Replay_Capture :: struct {
     sequence: u64,
     tick, round_id: u32,
-    packet: [138]u8,
+    packet: [164]u8,
     packet_size: int,
+    senses: Sense_Debug_World,
 }
 Replay_Writer :: struct {
     file: ^os.File,
-    bytes, limit: int,
-    frames, last_sequence: u64,
+    bytes, limit, line_limit: int,
+    frames, last_sequence, oversized_frames: u64,
     status: string,
 }
 Replay_Header :: struct {
@@ -22,6 +28,7 @@ Replay_Header :: struct {
     schema_version, protocol_version, simulation_hz: int,
     run_id, fingerprint: string,
     seed: u32,
+    trace_schema: int,
 }
 Replay_Frame :: struct {
     kind: string,
@@ -32,7 +39,7 @@ Replay_Frame :: struct {
 }
 Replay_End :: struct {
     kind, status: string,
-    frames, last_sequence, captured_frames, dropped_messages: u64,
+    frames, last_sequence, captured_frames, dropped_messages, oversized_frames: u64,
 }
 
 ai_debug_hex :: proc(bytes: []u8) -> string {
@@ -46,7 +53,10 @@ ai_debug_capture_world :: proc(debug: ^AI_Debug, session: ^Session) {
     if debug == nil { return }
     debug.world_sequence += 1
     capture := Replay_Capture{sequence = debug.world_sequence, tick = session.server_tick, round_id = session.round_id,
-        packet = protocol_encode_session(session), packet_size = 138 if session.character_count == 2 else 32}
+        packet = protocol_encode_session(session), packet_size = protocol_session_size(session)}
+    capture.senses = {active = session.phase == .In_Arena && session.character_count == MAX_PLAYERS,
+        round_id = session.round_id, map_id = session.map_id}
+    for character, owner in session.characters { capture.senses.entities[owner] = character.entity_id }
     ai_debug_push(debug, AI_Debug_Job{is_world = true, world = capture})
 }
 
@@ -71,7 +81,7 @@ replay_capture :: proc(debug: ^AI_Debug, capture: ^Replay_Capture) {
         file, error := os.open(path, {.Write, .Create, .Trunc})
         if error != nil { r.status = "open_error"; ai_debug_error(debug, "Cannot open QA recording"); return }
         r.file = file
-        header := Replay_Header{"header", 1, int(PROTOCOL_HEADER[4]), SIMULATION_HZ, debug.run_id, debug.fingerprint, debug.seed}
+        header := Replay_Header{"header", REPLAY_SCHEMA, int(PROTOCOL_HEADER[4]), SIMULATION_HZ, debug.run_id, debug.fingerprint, debug.seed, AI_DEBUG_SCHEMA}
         data, encode_error := json.marshal(header)
         defer delete(data)
         if encode_error != nil { r.status = "encode_error"; return }
@@ -92,8 +102,18 @@ replay_capture :: proc(debug: ^AI_Debug, capture: ^Replay_Capture) {
     defer delete(hex)
     frame := Replay_Frame{"frame", capture.sequence, capture.tick, hex, views[:count]}
     data, error := json.marshal(frame, {use_enum_names = true})
-    defer delete(data)
     if error != nil { r.status = "encode_error"; ai_debug_error(debug, "Cannot encode QA frame"); return }
+    line_limit := r.line_limit if r.line_limit > 0 else REPLAY_LINE_LIMIT
+    if len(data) > line_limit {
+        // Keep the world frame; the traces of this tick become an explicit gap.
+        delete(data)
+        r.oversized_frames += 1
+        frame.ai = views[:0]
+        data, error = json.marshal(frame, {use_enum_names = true})
+        if error != nil { r.status = "encode_error"; ai_debug_error(debug, "Cannot encode QA frame"); return }
+        ai_debug_error(debug, "Dropped oversized traces from a QA frame")
+    }
+    defer delete(data)
     if r.bytes + len(data) + 1 > r.limit - 1024 {
         r.status = "size_limit"
         fmt.printfln("[QA replay] Recording reached its %d-byte limit; simulation continues (%s).", r.limit, debug.directory)
@@ -107,7 +127,7 @@ replay_close :: proc(debug: ^AI_Debug) {
     if r.file == nil { return }
     // Called after the producer stopped and the writer drained the queue.
     status := "complete" if r.status == "recording" else r.status
-    data, error := json.marshal(Replay_End{"end", status, r.frames, r.last_sequence, debug.world_sequence, debug.dropped})
+    data, error := json.marshal(Replay_End{"end", status, r.frames, r.last_sequence, debug.world_sequence, debug.dropped, r.oversized_frames})
     if error == nil { replay_write_line(debug, data) }
     delete(data)
     os.close(r.file)

@@ -38,6 +38,12 @@ func _command() -> void:
 		return
 	sequence = int(command.sequence)
 	busy = true
+	if command.get("disconnect", false) and slot == "p2": app.network.disconnect_from_host()
+	if command.get("senses", false):
+		var overlay := app.get_node("DebugOverlay")
+		overlay.get_node("%CollidersToggle").button_pressed = false
+		overlay.get_node("%FiltersToggle").button_pressed = true
+		overlay.get_node("%Filters").scroll_vertical = 0
 	if command.get("move", false) and slot == "p1":
 		var event := InputEventKey.new()
 		event.physical_keycode = KEY_S

@@ -2,7 +2,7 @@
 
 [ext_resource type="Script" path="res://dev/ai/ai_debug_window.gd" id="1"]
 
-[node name="MoPockDebugger" type="Control"]
+[node name="CharacterDebugger" type="Control"]
 layout_mode = 3
 anchors_preset = 15
 anchor_right = 1.0

@@ -78,9 +78,10 @@ session_player_mask :: proc(session: ^Session) -> u8 {
 
 // Role comes from the welcomed connection, never from a command payload.
 // A rejected command and a valid no-op both leave the revision unchanged.
-session_apply :: proc(session: ^Session, content: ^Game_Content, player_id: u8, command: Client_Command) -> (changed: bool, rejection: Command_Reject_Reason) {
+session_apply :: proc(session: ^Session, content: ^Game_Content, player_id: u8, command: Client_Command, dev_search_enabled: bool = false) -> (changed: bool, rejection: Command_Reject_Reason) {
     if player_id == 0 || player_id > MAX_PLAYERS || !session.players[player_id - 1].present { return false, .Audience_Read_Only }
     if command.round_id != session.round_id { return false, .Stale_Round }
+    if command.kind == .Dev_Reset_Search { return dev_search_reset(session, content, dev_search_enabled) }
     if command.kind == .Input {
         if session.phase != .In_Arena { return false, .Wrong_Phase }
         character := &session.trainers[player_id - 1]

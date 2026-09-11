@@ -1,6 +1,6 @@
 # Proposal: autonomous characters, senses, strategies and learning
 
-Status: **6A idle/wander and 6A.1 dedicated threads/debugger implemented; sensing is planned; combat and learning remain later work**.
+Status: **6A idle/wander, 6A.1 dedicated threads/debugger and the 6B.1 focused/peripheral vision candidate are implemented; other senses, combat and learning remain later work**.
 See [the implementation and commands](06b-autonomous-idle-walk.md) for the current runtime.
 The [debugger checkpoint](06d-ai-debugger-harness.md) records the thread ownership,
 telemetry contract, inspection controls and verification evidence.
@@ -13,10 +13,17 @@ describes its gameplay role. A trainer is a separate entity.
 
 Read [the first implementation slice](06a-idle-wander-implementation-plan.md) for
 approved files, types, timing, protocol changes and acceptance checks. This document
-explains how that slice grows into composable combat AI. The next implementation
-is [6B.1: vision in the existing AI windows](06c-senses-and-ai-debug-windows-plan.md),
-including a current-code audit and required refactors. Its roadmap puts vision,
-olfaction, hearing and terrain sensing ahead of combat. The
+explains how that slice grows into composable combat AI. [6B.1: focused and peripheral
+vision](06g-focused-and-peripheral-vision.md) is implemented as a review candidate from its
+[proposal](06f-focused-and-peripheral-vision-proposal.md): different precision contracts,
+minimal visual memory and Observe/Face replacing random wandering. The [broader senses roadmap](06c-senses-and-ai-debug-windows-plan.md)
+puts vision, olfaction, hearing and terrain sensing ahead of combat. The
+[five-sense design](06j-combat-sensory-system.md) adds dedicated senses windows
+and vision filters at 6B.1.1, with pain activated by real combat damage at 6C.
+It keeps perceived state, memory, interpretation and decisions separate, without
+an anatomy simulation. Use generic code names; MoPock is design shorthand only.
+6B.1 passed [Team Lead technical re-review](06i-vision-team-lead-review.md);
+physical-input QA remains outstanding. The
 [MoPock research review](scratch2/planning.md) supplies the scientific background.
 
 ## 1. The model in plain language
@@ -130,7 +137,7 @@ These first-slice files are implemented; see the checkpoint for actual procedure
 
 | Later location | Ownership |
 | --- | --- |
-| `server/perception/types.odin`, `vision.odin`, `grid_visibility.odin` | Typed observation contracts and pure sensor queries over a supplied immutable sample. Implement vision first; other modalities follow individually. |
+| `server/observations/types.odin`; `server/perception/vision.odin`, `grid_visibility.odin` | Proposed separate data-only brain input contracts and privileged sensor queries. AI imports observations; only the host supplies world samples to perception. |
 | `server/senses.odin` | Host adapter that samples the world once, schedules sensors and delivers personal observations. |
 | `server/ai/working_memory.odin` | Later expiry, confidence and belief updates over sensory evidence. |
 | `server/ai/strategies.odin`, `tactics/*.odin` | Validated strategy composition and bounded tactic state. Introduce subpackages only when they have a clean dependency boundary. |
@@ -181,7 +188,7 @@ character-authored AI exports.
 The vision checkpoint first adds an explicit game-authored `senses.json` catalog,
 validated and fingerprinted by host and client. Its configuration source is recorded
 as `game_catalog`; the full package export migration is not a prerequisite for vision.
-See the [content migration plan](06c-senses-and-ai-debug-windows-plan.md#4-sense-profiles-and-sight-blocking-content).
+See the [current content and geometry proposal](06f-focused-and-peripheral-vision-proposal.md#5-geometry-sight-blocking-and-configuration).
 
 A later content checkpoint introduces a separate versioned **behavior contract**:
 `character.behavior@0.1.0` (proposed). Each package's custom exporter emits its
@@ -253,8 +260,8 @@ The host knows the full world to enforce rules; individual AI contexts do not.
 
 | Sense | Evidence it can provide | What it cannot infer automatically |
 | --- | --- | --- |
-| Vision | Visible positions, observable facing/animation tells, visible terrain; range, field of view, occlusion, sample tick. | Hidden positions, private cooldowns, enemy strategy or exact unseen health. |
-| Pain / nociception | Severity, affected body region when supported, impact bearing if known, event tick. | A hidden attacker's continuing location or guaranteed identity. |
+| Vision | Focused positions/observable facing and locomotion; anonymous coarse peripheral cues; range, field of view, occlusion and sample tick. Later visible terrain and attack tells. | Hidden positions, exact peripheral coordinates, private cooldowns, enemy strategy or exact unseen health. |
+| Pain / damage | Own perceived hurt/severity, event tick and optional gameplay-supported impact direction; no detailed anatomy. | Hidden attacker identity/position, attack name or the attacker's damage stat. |
 | Terrain / tactile | Ground underfoot, blocked motion, contact normal/material where the collision system can establish it; later sensed ground vibration. | Geometry behind a wall or the full reachable map. |
 | Olfaction | Locally sampled strength, approximate bearing, recognized scent class/signature when available. | Exact coordinates, facing, attack windup or a magical entity lookup. |
 | Hearing | Sound category, estimated direction/range and uncertainty; later trainer advice if heard. | Guaranteed truth of an instruction or the speaker's current hidden position. |
@@ -301,8 +308,10 @@ Proposed schedule, subject to measurement:
 - Wander orchestrator: invoked every tick on its worker, with direction selection
   scheduled once per six ticks (**10 Hz**), retained intent and immediate cancellation
   on locks/reset or blocked execution. Every invocation has its own trace.
-- Vision in 6B.1: sample both creatures on the first unlocked battle tick and every
-  six ticks afterward (10 Hz); retain the sample's original timestamp between queries.
+- Vision in 6B.1: sample each creature on its first unlocked battle tick and its
+  profile interval, initially every six ticks (10 Hz); retain the original timestamp
+  between queries. The [current proposal](06f-focused-and-peripheral-vision-proposal.md)
+  adds private visual memory and replaces wandering with Observe/Face.
 - Later senses/strategy scoring: bounded tick schedules, staggered only when needed
   and specified. Sample times and reaction latency are part of the gameplay rules.
 - Confirmed damage/contact: queued during execution and processed at the next tick;
@@ -389,14 +398,18 @@ That gesture remains a summon presentation cue until the advice feature exists.
 | --- | --- | --- |
 | **6A — Idle and wander (implemented)** | Each summoned character independently rests and walks on legal terrain. | Shared orchestrator/intent/action path, host state, delayed audience, stable reset and reproducible tests. |
 | **6A.1 — Threads and debugger (implemented)** | Two private native workers, real decision trees, journals and separate Godot inspectors. | Serial/threaded equivalence, bounded diagnostics, replay, native windows, independent close, reload and release export gate. See [evidence](06d-ai-debugger-harness.md). |
-| **6B.1 — Vision in the inspectors** | Configurable host vision and occlusion, displayed in each creature's existing debugger. | Personal observations from one battle sample; debug on/off preserves simulation. See the [implementation plan](06c-senses-and-ai-debug-windows-plan.md). |
+| **6B.1 — Focused/peripheral vision** | Different precision contracts, occlusion, small private visual memory and Observe/Face replacing wandering. | Evidence-only decisions, hidden-world invariance, two inspectors and recorded replay. See the [proposal](06f-focused-and-peripheral-vision-proposal.md). |
+| **6B.1.1 — Dedicated senses inspectors** | One separate native senses window per creature and vision-cone debug filters. | Correct live evidence/precision/age, separate memory, bounded logging/replay, native-window lifecycle and measured responsiveness. See [requirements](06j-combat-sensory-system.md). |
 | **6B.2–6B.4 — Remaining initial senses** | Olfaction, hearing and terrain/tactile observations, one checkpoint at a time. | Approximate evidence, modality-specific limits and age are visible; no hidden-coordinate lookup. |
 | **6C — First combat action and pain** | One shared melee or projectile ability, hurt/death, real pain feedback. | Ability/effect/hitbox ownership and event attribution work before strategic complexity. |
-| **6D — Working memory and composable tactics** | Ageing beliefs and two meaningfully competing tactics with priorities and interruptions. | One resolver, reasons visible, no rapid flip-flopping, hidden-state access or capability bypass. |
+| **6D — Richer memory and composable tactics** | Expand minimal visual memory into combined sensory beliefs and competing tactics with priorities and interruptions. | One resolver, reasons visible, no rapid flip-flopping, hidden-state access or capability bypass. |
 | **6E — Mood and trainer relationship** | Temperament, temporary mood and perceived trainer advice affect bounded preferences. | Explainable personal behavior; subjective trainer feedback stays distinct from combat effectiveness. |
 | **6F — Learning and persistence** | A character adapts to observed opponents across controlled trials; later across matches. | Learning-on/off evidence, stable identity, bounded memory, compatible save/load. |
 
-The **6A contract** and **6A.1 harness** are implemented. The next review checkpoint
-is **6B.1**: add vision and its evidence to the existing inspectors before implementing
-the remaining senses. Later phase interfaces are direction, not
-instructions to scaffold every future module.
+The **6A contract**, **6A.1 harness** and **6B.1 vision foundation** are implemented;
+6B.1 passed technical re-review. The next checkpoint is **6B.1.1**: dedicated live
+senses windows, building on the [implemented arena vision filters](06k-arena-sense-overlay.md),
+before implementing the remaining senses.
+History and decision inspection stay in the existing debugger and replay tools.
+Later phase interfaces are direction, not instructions to scaffold every future
+module.

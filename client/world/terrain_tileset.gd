@@ -46,7 +46,7 @@ static func validate(catalog: ArenaCatalog, visuals: Dictionary = VISUALS, nativ
 static func build(catalog: ArenaCatalog, visuals: Dictionary = VISUALS, native_size: int = NATIVE_TILE_SIZE) -> TileSet:
 	var result := TileSet.new()
 	result.tile_size = Vector2i(native_size, native_size)
-	var metadata := {"terrain_id": TYPE_INT, "terrain_key": TYPE_STRING, "walkable": TYPE_BOOL, "elevation": TYPE_INT}
+	var metadata := {"terrain_id": TYPE_INT, "terrain_key": TYPE_STRING, "walkable": TYPE_BOOL, "blocks_vision": TYPE_BOOL, "scent": TYPE_STRING, "elevation": TYPE_INT}
 	for key: String in metadata:
 		var index := result.get_custom_data_layers_count()
 		result.add_custom_data_layer()
@@ -67,6 +67,8 @@ static func build(catalog: ArenaCatalog, visuals: Dictionary = VISUALS, native_s
 				data.set_custom_data("terrain_id", terrain.id)
 				data.set_custom_data("terrain_key", terrain.key)
 				data.set_custom_data("walkable", terrain.walkable)
+				data.set_custom_data("blocks_vision", terrain.blocks_vision)
+				data.set_custom_data("scent", terrain.scent)
 				data.set_custom_data("elevation", elevation)
 				data.modulate = visual.get("tint", Color.WHITE)
 				if elevation > 0 and terrain.key in ["grass", "ground", "tall_grass"]:

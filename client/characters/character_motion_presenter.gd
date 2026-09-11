@@ -53,6 +53,9 @@ func advance(delta: float) -> void:
 	var sample := _sample_state()
 	var age := maxf(sample_tick - _state_tick(sample), 0.0)
 	view.present_locomotion(Protocol.LOCOMOTION_NAMES[sample.locomotion], Protocol.FACING_NAMES[sample.facing], age / 60.0)
+	if not sample is Snapshot.TrainerState:
+		var acquired := target_tick - float((current_tick - current.target_acquired_tick) & 0xffffffff)
+		view.present_target_alert(current.target_alert, maxf(0, sample_tick - acquired) / 60.0)
 
 
 func _state_tick(state: Snapshot.CharacterState) -> float:
@@ -67,11 +70,13 @@ func _sample_state() -> Snapshot.CharacterState:
 func _position_weight() -> float:
 	var begin := from_tick
 	var end := target_tick
-	if current.locomotion == 1:
+	if current.locomotion != 0:
 		# Tick N stores the result of movement over (N-1, N]. Do not smear
 		# that first displacement backward over idle or the planted step.
-		begin = maxf(begin, _state_tick(current) + walk_start_ticks - 1)
-	elif previous.locomotion == 1:
+		var movement_tick := _state_tick(current)
+		if current is Snapshot.TrainerState: movement_tick = target_tick - float((current_tick - current.movement_start_tick) & 0xffffffff)
+		begin = maxf(begin, movement_tick + walk_start_ticks - 1)
+	elif previous.locomotion != 0:
 		# Complete the last movement before displaying the idle pose.
 		end = minf(end, _state_tick(current) - 1)
 	if end <= begin:

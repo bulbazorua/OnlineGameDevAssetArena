@@ -35,8 +35,13 @@ func scan(path: String, fingerprint: String, progress := Callable(), cancelled :
 	indexed_bytes = file.get_length()
 	var first := line_at(file, indexed_bytes)
 	var value = Trace.parse_json(first.get("text", ""))
-	if not value is Dictionary or value.get("kind") != "header" or value.get("schema_version") != 1 or value.get("protocol_version") != Protocol.HEADER[4] or value.get("simulation_hz") != 60:
+	if not value is Dictionary or value.get("kind") != "header" or Trace.schema_of(value.get("schema_version")) == 0 or not Trace.integer(value.get("protocol_version"), 9, Protocol.HEADER[4]) or value.get("simulation_hz") != 60:
 		error = "Unsupported replay header/schema/protocol."
+		return false
+	# Envelope 1 carries schema-1 traces; envelope 2 must declare trace schema 2.
+	var envelope := Trace.schema_of(value.schema_version)
+	if (envelope >= 2 and value.get("trace_schema") != envelope) or (envelope == 1 and value.has("trace_schema")):
+		error = "Replay envelope and trace schema disagree."
 		return false
 	if value.get("fingerprint") != fingerprint or not value.get("run_id") is String or value.run_id.is_empty() or value.run_id.length() > 256 or not Trace.integer(value.get("seed"), 0, 4294967295):
 		error = "Replay content or run identity does not match."
@@ -80,16 +85,17 @@ func decode_frame(value: Variant) -> Dictionary:
 	if not value is Dictionary or value.get("kind") != "frame" or not Trace.integer(value.get("sequence"), 1) or not Trace.integer(value.get("tick"), 0, 4294967295):
 		return {"error": "Malformed replay frame."}
 	var hex = value.get("packet_hex")
-	if not hex is String or hex.length() not in [64, 276]: return {"error": "Invalid replay world packet length."}
+	if not hex is String or hex.length() not in [64, 276, 296, 328]: return {"error": "Invalid replay world packet length."}
 	for character in hex:
 		if character not in "0123456789abcdef": return {"error": "Invalid replay packet encoding."}
-	var message = Protocol.decode(hex.hex_decode(), 0)
+	var message = Protocol.decode_recorded(hex.hex_decode(), int(header.protocol_version))
 	if not message.error_title.is_empty() or message.kind != Protocol.MessageKind.SESSION_STATE or message.session.server_tick != int(value.tick):
 		return {"error": "Replay world packet/tick is invalid."}
 	if not value.get("ai") is Array or value.ai.size() > 2: return {"error": "Invalid replay AI count."}
 	var owners := {}
 	for record in value.ai:
 		if not record is Dictionary or not Trace.integer(record.get("owner_id"), 1, 2): return {"error": "Invalid replay AI owner."}
+		if int(record.get("schema_version", 0)) != int(header.schema_version): return {"error": "Trace does not match its replay envelope."}
 		var owner := int(record.owner_id)
 		var problem := Trace.validate_record(record, header.run_id, header.fingerprint, owner)
 		if not problem.is_empty(): return {"error": problem}

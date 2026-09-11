@@ -29,14 +29,14 @@ protocol_version_six_fixtures :: proc(t: ^testing.T) {
     hello[7] = 255
     command, valid := protocol_decode(hello[:], 0)
     testing.expect(t, valid && command.wants_audience && command.fingerprint[0] == 255)
-    testing.expect(t, protocol_encode_welcome(2) == [11]u8{'O', 'G', 'A', 'A', 9, 2, 2, 0, 0, 0, 0})
+    testing.expect(t, protocol_encode_welcome(2) == [11]u8{'O', 'G', 'A', 'A', 11, 2, 2, 0, 0, 0, 0})
     session := Session{round_id = 0x04030201, revision = 0x08070605, phase = .Selecting, map_id = 1, audience_count = 513,
         players = {{present = true, character_id = 4, ready = true}, {present = true, character_id = 3}}}
-    expected := [32]u8{'O', 'G', 'A', 'A', 9, 3, 1, 2, 3, 4, 5, 6, 7, 8, 1, 3, 1, 2, 1, 0, 4, 0, 1, 3, 0, 0, 0, 0, 0, 0, 0, 0}
+    expected := [32]u8{'O', 'G', 'A', 'A', 11, 3, 1, 2, 3, 4, 5, 6, 7, 8, 1, 3, 1, 2, 1, 0, 4, 0, 1, 3, 0, 0, 0, 0, 0, 0, 0, 0}
     encoded := protocol_encode_session(&session)
     testing.expect(t, protocol_session_size(&session) == len(expected))
     for byte, index in expected { testing.expect(t, encoded[index] == byte) }
-    select := [12]u8{'O', 'G', 'A', 'A', 9, 5, 1, 2, 3, 4, 4, 0}
+    select := [12]u8{'O', 'G', 'A', 'A', 11, 5, 1, 2, 3, 4, 4, 0}
     pick, pick_ok := protocol_decode(select[:], 0)
     testing.expect(t, pick_ok && pick.round_id == 0x04030201 && pick.character_id == 4)
     for length in 0..<len(hello) {
@@ -51,7 +51,7 @@ protocol_version_six_fixtures :: proc(t: ^testing.T) {
     }
     _, wrong_channel := protocol_decode(hello[:], 1)
     testing.expect(t, !wrong_channel)
-    ready := [13]u8{'O', 'G', 'A', 'A', 9, 6, 0, 0, 0, 0, 1, 0, 2}
+    ready := [13]u8{'O', 'G', 'A', 'A', 11, 6, 0, 0, 0, 0, 1, 0, 2}
     _, bad_bool := protocol_decode(ready[:], 0)
     testing.expect(t, !bad_bool)
 }

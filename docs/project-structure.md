@@ -6,6 +6,12 @@ Status: [Arena trainers and summoning](05a-trainers-and-summoning.md) adds train
 
 The original checkpoint plan is in [the character-selection and top-down-arena plan](03-selection-and-topdown-arena-plan.md). The tree below describes the existing code.
 
+The [combat sensory plan](06j-combat-sensory-system.md) adds dedicated senses
+windows as a future presentation responsibility, separate from the decision
+debugger. No new runtime files are claimed in the tree below. Use generic
+character/creature/agent/sense/perception names in code and contracts; MoPock is
+conversational/design shorthand, not an identifier or module prefix.
+
 For the complete character architecture, use the [refined architecture](04c-component-characters-and-animation-contract.md), [future package layout](04d-character-packages-and-migration.md) and [versioned harness/admission contract](04e-character-harness-and-base-contract.md). The tree below includes only implemented code; shared interfaces, synthetic fixtures and Archer/Orc modules cover the art foundation, while full gameplay/AI exports and admission remain planned.
 
 Keep both programs in **OnlineGameDevAssetArena**, in sibling folders:
@@ -26,7 +32,7 @@ OnlineGameDevAssetArena/
 │   ├── main.gd                     AppController: content, screen routing, signals, CLI
 │   ├── network/
 │   │   ├── game_connection.gd      ENet lifecycle and decoded state
-│   │   └── protocol.gd             Version 9 packet codec
+│   │   └── protocol.gd             Version 10 packet codec
 │   ├── session/
 │   │   └── session_snapshot.gd     Decoded session, countdown, tick, and live characters
 │   ├── dev/
@@ -39,6 +45,7 @@ OnlineGameDevAssetArena/
 │   │   ├── process_character_assets.gd  Isolated artifact-processing worker
 │   │   ├── fixtures/characters/{reference16,reference32}/  Independent importer/exporter fixtures
 │   │   ├── validate_project.gd     Validate a staged client before publication
+│   │   ├── fixtures/content/vision_range.arenas.json  Staged close-quarters QA arena for make dev_vision
 │   │   └── ai/
 │   │       ├── ai_debug_window.gd / .tscn  Separate per-creature native debugger
 │   │       ├── trace_reader.gd     Bounded, validated live and journal replay input
@@ -47,7 +54,8 @@ OnlineGameDevAssetArena/
 │   │       ├── replay_window.gd / .tscn  Recorded-match QA controls and synchronized AI panels
 │   │       ├── replay_store.gd / replay_reader.gd  Background bounded index and frame validation
 │   │       ├── replay_stage.gd     Arena and entity poses at the selected recorded tick
-│   │       └── spatial_trace.gd    Recorded self/candidate/intent/result geometry
+│   │       ├── vision_view.gd      Creature-knowledge vision panel with a labelled host-diagnostics toggle
+│   │       └── spatial_trace.gd    Legacy schema-1 wander geometry
 │   ├── ui/
 │   │   ├── lobby_screen.gd         Display state and emit user intent
 │   │   ├── lobby_screen.tscn       Connection controls, roster, and Start
@@ -57,14 +65,15 @@ OnlineGameDevAssetArena/
 │   │   ├── debug_overlay.gd / .tscn  Opt-in development FPS/ping panel
 │   │   └── arena_preview.gd        Fit a world map to the screen
 │   ├── content/
-│   │   ├── game_content.gd         Validate catalog, visuals, and fingerprint
-│   │   ├── arena_catalog.gd        Terrain/arena definitions and cell queries
+│   │   ├── game_content.gd         Validate catalog, visuals, senses, and fingerprint
+│   │   ├── sense_catalog.gd        Validated vision/olfaction profiles, emitters and per-character bindings
+│   │   ├── arena_catalog.gd        Terrain/arena definitions, walkability and sight blocking
 │   │   ├── arena_presentation.gd   ArenaPresentation: validate theme and grounded props
 │   │   ├── character_contract.gd   Draft export/role validation; no admission certification
 │   │   ├── contracts/character_basic_combat/1.0.0-draft.1.json
 │   │   ├── contracts/player_trainer/1.0.0-draft.1.json
 │   │   ├── presentation/arenas/    Client-only Tiny Swords theme and building measurements
-│   │   └── data/                   characters.json, terrains.json, arenas.json
+│   │   └── data/                   characters.json, terrains.json (schema 3), senses.json (schema 2), arenas.json
 │   ├── presentation/
 │   │   └── asset_scale.gd          AssetScale: source reference to gameplay/world size
 │   ├── world/
@@ -102,15 +111,22 @@ OnlineGameDevAssetArena/
 │   ├── audience.odin               Shared bounded spectator history and timed release
 │   ├── audience_test.odin          Delay timing, copies, ring bounds, Welcome bytes
 │   ├── network.odin                ENet lifecycle and session updates
-│   ├── ai/                         Pure per-character decisions, wander tactic and PRNG
-│   │   └── trace.odin              Optional bounded branch events with thread/timing data
+│   ├── observations/types.odin     Data-only brain input contract: sightings, cues, samples, facing helpers
+│   ├── perception/                 Privileged sensing physics: sight geometry, the scent field and the nose sampler
+│   ├── ai/                         Pure per-character decisions: Observe tactic and private visual memory
+│   │   ├── observe.odin            Scan / orient / observe / reacquire from permitted evidence only
+│   │   ├── visual_memory.odin      Bounded once-only ingestion, ageing and expiry
+│   │   └── trace.odin              Optional bounded branch events with evidence references
+│   ├── senses.odin                 Host receptors (vision, olfaction), shared schedule gate, frozen-phase sampling and host-only audits
+│   ├── scent_environment.odin      Emitters, deposits and field steps for the round's shared scent field
+│   ├── content_senses.odin         senses.json validation and character bindings
 │   ├── brain_workers.odin          Two dedicated threads and copied private mailboxes
 │   ├── dev_ai_debug.odin           Bounded queue, rotating journals, atomic snapshots
 │   ├── brain_workers_test.odin     Serial equivalence, isolation, rotation and debug gates
 │   ├── simulation.odin             Public session plus private battle owner
-│   ├── battle.odin                 Context preparation, AI intents and execution adapter
-│   ├── character_actions.odin      Shared voluntary action resolver and locomotion
-│   ├── protocol.odin               Version 9 packet codec
+│   ├── battle.odin                 Receptors, agents, turn state; sampling before decisions before actions
+│   ├── character_actions.odin      Shared voluntary action resolver: Move, Face (turn in place) and locomotion
+│   ├── protocol.odin               Version 10 packet codec
 │   ├── session.odin                Membership, phase, picks, Ready, reset
 │   ├── characters.odin             Character_Definition
 │   ├── movement.odin               Live Character, countdown/spawn, fixed movement
@@ -148,9 +164,16 @@ OnlineGameDevAssetArena/
 │   ├── 04h-archer-and-orc-modules.md  Independent real-art modules, calibration and checks
 │   ├── 04i-playable-characters.md  Runtime bundles, selectable art, motion labels and asset audit
 │   ├── 05-player-harness.md        Trainer contract, Player1 processing and harness
-│   ├── 06c-senses-and-ai-debug-windows-plan.md  Pending vision and later sense roadmap
+│   ├── 06c-senses-and-ai-debug-windows-plan.md  Broader senses roadmap and earlier vision sketch
 │   ├── 06d-ai-debugger-harness.md   Implemented thread/trace contract, debugger and evidence
 │   ├── 06e-qa-replay-and-trace-browsing.md  Performance, playback contract, QA and re-simulation plan
+│   ├── 06f-focused-and-peripheral-vision-proposal.md  Vision design proposal (implemented in 6B.1)
+│   ├── 06g-focused-and-peripheral-vision.md  Implemented vision, memory, Face action, QA arena and verification
+│   ├── 06h-vision-coding-agent-report.md  Coding-agent report for the owner and Team Lead
+│   ├── 06i-vision-team-lead-review.md  Team Lead review of the first 6B.1 candidate
+│   ├── codebase/sight-geometry.md  Closed-cell sight rule, lane sweep and the supported envelope
+│   ├── codebase/battle-runtime-lifecycle.md  Per-round versus per-creature private runtime state
+│   ├── delegation.md               Team Lead coding assignment for 6B.1
 │   ├── log-cleanup.md              Daily retention, active-run protection and installed cron
 │   ├── project-structure.md        This document
 │   ├── protocol.md                 Version 9 messages and content contract
@@ -169,7 +192,9 @@ OnlineGameDevAssetArena/
 │   ├── dev_client_driver.gd        Development-check input and render capture
 │   ├── ai_debugger_check.py        Real workers, inspector lifecycle, replay and native windows
 │   ├── ai_debugger_driver.gd       Test-only controls and actual inspector render capture
-│   ├── ai_trace_check.gd           Trace identity, bounds, ancestry and journal validation
+│   ├── ai_trace_check.gd           Schema-2 trace validation, evidence references, legacy schema-1 decoding
+│   ├── fixtures/ai/                Genuine schema-1 snapshot/replay fixtures for legacy decoding
+│   ├── vision_review/              Team Lead vision regression checks (wall edges, accepted range, one-creature replacement)
 │   ├── replay_check.gd             Real recorded movement, synchronized seek/pause, graph and file checks
 │   ├── log_cleanup_check.py        Expiry, deletion, active/pinned/source and symlink preservation
 │   ├── land_movement_check.gd      Real host/client stair traversal and camera switches
@@ -243,6 +268,11 @@ The root `Makefile` provides the entry point for both programs:
 | `make dev_arena P1=triangle P2=diamond ARENA=sandbar AUDIENCE=1` | Launch directly into a watched development scenario |
 | `make check_dev` | Check launcher, live visuals, automatic code/data relaunch, and cleanup |
 | `make ai_debugger P1=archer P2=orc` | Launch the arena and two separate AI tree/timeline/replay inspectors |
+| `make dev_vision P1=archer P2=orc` | Launch the staged close-quarters vision QA arena with both inspectors |
+| `make dev_scent P1=archer P2=orc` | Launch the staged scent-trail QA arena; F8 toggles the host scent heatmap |
+| `make check_scent` | Check scent trails, Olfaction pages, host heatmap, saved filters, reset and recorded olfaction |
+| `make check_vision` | Run the perception geometry, AI memory/attention, host vision suites and the independent vision review checks |
+| `make check_vision_review` | Run the Team Lead vision regression checks in normal and debug builds |
 | `make check_ai_debugger` | Check real dedicated workers, bounded logs, inspector replay/lifecycle and release export gate |
 | `make replay [REPLAY=/path/to/match.replay.jsonl]` | Open recorded match QA with pause/play, seeking, speed and both AI traces |
 | `make purge_logs` | Preview logs and recordings eligible for daily cleanup; no deletion by default |
@@ -272,7 +302,7 @@ Keep generated output in `build/` and ignore it in Git. Also ignore the Godot ca
 
 ## Current checkpoint boundary
 
-Both players can choose characters and a shared map, then press Ready. The host runs **5, 4, 3, 2, 1**, places both trainers and runs a 1.5-second summon sequence for their selected gladiators. Fighters move their trainers with WASD/arrows, climb terraces via stairs, and keep their trainer centered at fixed zoom. Characters independently idle and walk within their summon area through the server AI orchestrator. Each audience member starts with a whole-map view, can pan and zoom independently, and can optionally follow either player. Either fighter can return the session to Lobby. Combat, senses, adaptive learning and terrain bonuses remain later phases.
+Both players can choose characters and a shared map, then press Ready. The host runs **5, 4, 3, 2, 1**, places both trainers and runs a 1.5-second summon sequence for their selected gladiators. Fighters move their trainers with WASD/arrows, climb terraces via stairs, and keep their trainer centered at fixed zoom. Characters independently scan, notice and watch nearby subjects through host vision and the server AI orchestrator, turning in place without walking. Each audience member starts with a whole-map view, can pan and zoom independently, and can optionally follow either player. Either fighter can return the session to Lobby. Combat, senses, adaptive learning and terrain bonuses remain later phases.
 
 ## Autonomous character AI
 
@@ -294,4 +324,56 @@ window. `server/dev_replay.odin` records the host's public state plus matching t
 the viewer samples existing rendering resources at the selected tick without running
 AI or connecting to a match. Deterministic re-simulation remains planned.
 
+[Checkpoint 6B.1](06g-focused-and-peripheral-vision.md) adds `server/observations`,
+`server/perception`, `server/senses.odin`, the Observe tactic and private visual memory in
+`server/ai`, the Face action, `senses.json`, terrain sight blocking, trace/replay schema 2,
+the Vision panels and the staged `vision_range` QA arena.
+
 Player1 walk preparation and prediction are described in [Player1 walk timing](05b-player-walk-timing.md). `client/players/trainer_movement.gd` mirrors `trainer_tick_motion`; `tests/player_step_check.gd` checks processed lift/plant poses and extends the trainer integration check.
+
+## Arena senses overlay
+
+[The arena overlay slice](06k-arena-sense-overlay.md) adds `server/dev_senses.odin` for the writer-owned latest-sample projection, `client/dev/sense_feed.gd` for bounded local reads, `vision_cone_geometry.gd` for the clipped fields, and `sense_overlay.gd` for arena drawing. The existing debug UI groups these separately from physical colliders. `tests/sense_overlay_check.gd` verifies the slice. [Ownership and timing](codebase/arena-sense-overlay.md) are documented separately from the [live senses windows](06l-live-senses-windows.md).
+
+The live companions use `client/dev/senses/senses_window.tscn` and its controller, `vision_readings.gd` for current-only row projection, `vision_sensor_view.gd` for the spatial view, and `display_metrics.gd` for bounded timing samples. `server/dev_senses_test.odin` covers projection lifecycle and delivery timestamps. `tests/senses_windows_check.py` with `tests/senses_window_driver.gd` verifies six-window operation, uncertainty, stale recovery, closure, reload and display latency. See the [deep dive](codebase/live-senses-inspector.md).
+
+## Trainer running and target reactions
+
+Trainer running and target-found animation are described in
+[the running checkpoint](05c-trainer-running-and-target-alert.md).
+`server/trainers.odin` owns per-trainer energy and movement clocks;
+`client/players/trainer_movement.gd` predicts them and
+`client/ui/trainer_energy.gd` displays the local meter.
+`server/trainer_run_test.odin`, `tests/trainer_run_model.gd` and
+`tests/trainer_run_check.gd` cover the host, prediction, animation and live clients.
+`client/characters/surprise_hop.gd` supplies the creature's body lift and fixed
+ground shadow; `CharacterView` applies the lift and positions the head marker.
+`client/characters/target_alert.gd` keeps the marker's swappable texture.
+
+## Olfactory trails additions
+
+- `server/observations/types.odin`: `Scent_Class`, `Scent_Reading`, `Scent_Sample`, `Olfaction_Profile`, `Scent_Emitter`; `Sense_Input` carries both senses with separate new-sample flags.
+- `server/perception/scent_field.odin`, `olfaction.odin`, `scent_test.odin`: the shared scent field with authored media rules, the nose sampler and their tests.
+- `server/scent_environment.odin`: emitters, deposits and field steps inside `Battle_Runtime`; `server/senses.odin` now holds per-sense receptors with a shared schedule gate.
+- `server/content_senses.odin` (senses schema 2), `server/arena.odin` (terrain schema 3 scent media), `client/content/sense_catalog.gd`, `arena_catalog.gd`.
+- `server/ai/scent_memory.odin`, `search_scent.odin`, `scent_memory_test.odin`: private scent memory, own-trail discounting and scent-driven search transitions.
+- `server/dev_scent.odin`: quantized field capture and `scent.json`; `dev_senses.odin` schema 3, `dev_search.odin` schema 2, trace schema 4, replay envelope 4; `server/scent_battle_test.odin`.
+- `client/dev/senses/olfaction_readings.gd`, `olfaction_sensor_view.gd`: the Olfaction page; `client/dev/scent_feed.gd`, `scent_overlay.gd`, `window_preferences.gd`: the F8 host heatmap and its saved filters.
+- `client/dev/fixtures/content/scent_trail.arenas.json`, `tests/scent_check.py`, `scent_client_driver.gd`, `scent_replay_check.gd`: the scent QA arena and integration harness.
+
+See [the feature record](06n-olfactory-trails.md) and [ownership deep dive](codebase/olfaction.md).
+
+## Composite search additions
+
+- `server/ai/search*.odin`: private search profiles, evidence handling, decaying visit history, local steering and behavior tests.
+- `server/search_battle_test.odin`: real-map exploration, privacy, dedicated-worker equivalence and lifecycle checks.
+- `server/dev_search.odin`: latest-only private search projection for development.
+- `server/dev_search_reset.odin`: host-only safe placement and fresh-round reset; `dev_search_reset_test.odin` covers separation, lifecycle, rejected resets and development gates.
+- `client/dev/search/`: saved preferences, validated feed, arena drawing, readable scores and recorded Search tab.
+- `client/dev/search/search_reset_control.gd`: reset button, host confirmation and failure feedback; F7 routes here from the development overlay.
+- `client/dev/senses/exploration_memory.gd`, `exploration_memory_panel.gd`, `exploration_memory_map.gd`: owner-filtered visit projection, live memory tab and clickable map. Uses the existing search feed independently of F6; no world-map query or decision-history loading.
+- `tests/exploration_memory_check.gd`: private display data, decay, selection and lifecycle checks; the search integration verifies both live memory windows against private journals and across reset.
+- `client/characters/target_alert.gd`, `client/presentation/target_acquired.tres`: public acquisition presentation and replaceable pixel asset.
+- `tests/search_check.py`, `search_client_driver.gd`, `search_ai_driver.gd`, `search_replay_check.gd`: native/headless integration, actual restart persistence and recorded markers.
+
+See [the feature record](06m-naturalistic-opponent-search.md) and [ownership deep dive](codebase/opponent-search.md).

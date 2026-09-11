@@ -113,6 +113,8 @@ func _write_status() -> void:
 		"visual_generation": _generation, "visuals": visuals, "reload_error": _error,
 		"camera_enabled": _app.game_arena.camera.enabled, "ping": network.get_ping_ms(),
 		"audience": 0 if snapshot == null else snapshot.audience_count}
+	var overlay := _app.get_node_or_null("DebugOverlay")
+	if overlay != null: status["senses"] = overlay.senses.diagnostics()
 	var path := _directory.path_join("%s.json" % _slot)
 	var file := FileAccess.open(path + ".tmp", FileAccess.WRITE)
 	if file == null:

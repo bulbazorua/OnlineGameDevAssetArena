@@ -11,9 +11,9 @@ const DOWN := 8
 
 
 # Keep this fixed-step rule in agreement with server/movement.odin.
-static func move(position: Vector2, mask: int, radius: float, arena: ArenaCatalog.ArenaDefinition, catalog: ArenaCatalog) -> Vector2:
+static func move(position: Vector2, mask: int, radius: float, arena: ArenaCatalog.ArenaDefinition, catalog: ArenaCatalog, speed := SPEED) -> Vector2:
 	var direction := Vector2(float((mask >> 1) & 1) - float(mask & 1), float((mask >> 3) & 1) - float((mask >> 2) & 1))
-	var displacement := direction.normalized() * SPEED * STEP
+	var displacement := direction.normalized() * speed * STEP
 	var result := position
 	var candidate := result + Vector2(displacement.x, 0)
 	if catalog.position_is_clear(arena, candidate, radius) and catalog.step_is_allowed(arena, result, candidate):

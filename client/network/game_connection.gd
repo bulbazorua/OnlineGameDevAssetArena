@@ -6,6 +6,7 @@ const GameContent = preload("res://content/game_content.gd")
 const SessionSnapshot = preload("res://session/session_snapshot.gd")
 
 signal command_rejected(reason: int)
+signal command_reply_rejected(kind: int, reason: int)
 signal connection_changed
 signal session_changed(snapshot: SessionSnapshot)
 signal world_changed(snapshot: SessionSnapshot)
@@ -174,6 +175,7 @@ func _receive_message(message: GameProtocol.DecodedMessage) -> void:
 				_close_connection("Invalid host reply", "A command reply arrived before Welcome.", true)
 				return
 			command_rejected.emit(message.rejection_reason)
+			command_reply_rejected.emit(message.rejected_kind, message.rejection_reason)
 
 
 func request_start_selection() -> void:
@@ -236,6 +238,11 @@ func _exit_tree() -> void:
 
 func request_return_to_lobby() -> void:
 	_send_command(GameProtocol.MessageKind.RETURN_TO_LOBBY)
+
+
+func request_search_reset() -> void:
+	if OS.is_debug_build() and "--dev" in OS.get_cmdline_user_args() and player_id in [1, 2]:
+		_send_command(GameProtocol.MessageKind.DEV_RESET_SEARCH)
 
 
 func send_input(sequence: int, mask: int) -> void:

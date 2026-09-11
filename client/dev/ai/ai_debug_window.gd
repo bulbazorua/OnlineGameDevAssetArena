@@ -6,6 +6,7 @@ const Loader = preload("res://dev/ai/trace_loader.gd")
 const Timeline = preload("res://dev/ai/trace_timeline.gd")
 const Graph = preload("res://dev/ai/decision_graph.gd")
 const Palette = preload("res://dev/ai/trace_palette.gd")
+const VisionView = preload("res://dev/ai/vision_view.gd")
 const GameContent = preload("res://content/game_content.gd")
 var live_reader := Reader.new()
 var reader := live_reader
@@ -38,6 +39,10 @@ var _details: TextEdit
 var _events: TextEdit
 var _payload: TextEdit
 var _spatial: Control
+var _search: Control
+var _vision: Control
+var _host_toggle: CheckButton
+var _host_view := false
 var _pause: Button
 var _dialog: FileDialog
 var _loader := Loader.new()
@@ -46,7 +51,7 @@ var _journal_pending := ""
 var _journal_loading := false
 var _filter_pending := -1.0
 var _selected_node: Dictionary = {}
-var _tab_dirty := [true, true, true, true]
+var _tab_dirty := [true, true, true, true, true, true]
 var _reader_us := 0
 var _selection_us := 0
 var timeline_rebuilds := 0
@@ -69,7 +74,7 @@ func _ready() -> void:
 		push_error(error)
 		get_tree().quit(1)
 		return
-	get_window().title = "MoPock P%d · AI DEBUG" % observer_id
+	get_window().title = "Character P%d · AI DEBUG" % observer_id
 	get_window().min_size = Vector2i(1120, 760)
 	get_window().size = Vector2i(1440, 940)
 	get_window().content_scale_size = Vector2i(1440, 940)
@@ -122,7 +127,7 @@ func _build_ui() -> void:
 	var layout := VBoxContainer.new()
 	layout.add_theme_constant_override("separation", 10)
 	margin.add_child(layout)
-	_heading = _label("MoPock P%d  /  private brain debugger" % observer_id, layout, 24)
+	_heading = _label("Character P%d  /  private brain debugger" % observer_id, layout, 24)
 	_heading.modulate = Color("75c8ff") if observer_id == 1 else Color("ffbc80")
 	_status = _label("Waiting for host telemetry…", layout)
 	_metrics = _label("Dedicated native thread  ·  copied inputs  ·  authoritative outcomes", layout, 13)
@@ -136,6 +141,11 @@ func _build_ui() -> void:
 	_button("◀ Event", toolbar, func(): step_event(-1))
 	_button("Event ▶", toolbar, func(): step_event(1))
 	_button("Open journal…", toolbar, func(): _dialog.popup_centered_ratio(0.75))
+	_host_toggle = CheckButton.new()
+	_host_toggle.text = "Host diagnostics"
+	_host_toggle.tooltip_text = "Developer-only view: reference map and rejected candidates. Never part of the creature's input."
+	_host_toggle.toggled.connect(func(pressed: bool): _host_view = pressed; _tab_dirty = [true, true, true, true, true, true]; _render_active_tab())
+	toolbar.add_child(_host_toggle)
 	_step_label = _label("Select a decision to inspect its recorded execution.", layout, 13)
 	var split := HSplitContainer.new()
 	split.size_flags_vertical = Control.SIZE_EXPAND_FILL
@@ -185,9 +195,17 @@ func _build_ui() -> void:
 	_details.size_flags_stretch_ratio = 0.3
 	_events = _text(_tabs, "Event log")
 	_payload = _text(_tabs, "Recorded payload")
+	_vision = VisionView.new()
+	_vision.name = "Vision"
+	_vision.content = content
+	_tabs.add_child(_vision)
 	_spatial = Spatial.new()
-	_spatial.name = "Spatial data"
+	_spatial.name = "Legacy spatial (schema 1)"
 	_tabs.add_child(_spatial)
+	_search = preload("res://dev/search/search_trace_panel.gd").new()
+	_search.name = "Search"
+	_tabs.add_child(_search)
+	_search.configure(observer_id)
 	_tabs.tab_changed.connect(func(_tab): _render_active_tab())
 	_footer = _label("", layout, 12)
 	_footer.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
@@ -254,6 +272,10 @@ func _accept_batch(batch: Dictionary) -> void:
 			if not offline and not paused:
 				_rebuild_timeline()
 				if not reader.records.is_empty(): select_record(reader.records.back(), false)
+			elif not offline and selected.is_empty() and not reader.records.is_empty():
+				# A pause before the first decision arrived pins that decision instead of showing nothing.
+				_rebuild_timeline()
+				select_record(reader.records.front(), true, true)
 	_refresh_status()
 
 
@@ -300,12 +322,22 @@ func _render_record() -> void:
 	var definition = content.by_id.get(int(r.definition_id))
 	var name_text: String = "definition %d" % int(r.definition_id) if definition == null else definition.display_name
 	_heading.text = "P%d · %s  /  private brain debugger" % [observer_id, name_text]
-	get_window().title = "MoPock P%d · %s · AI DEBUG" % [observer_id, name_text]
+	get_window().title = "Character P%d · %s · AI DEBUG" % [observer_id, name_text]
 	_metrics.text = "Thread %d  ·  entity %d / round %d  ·  tick %d  ·  queue %d µs / compute %d µs" % [int(r.worker_id), int(r.input.entity_id), int(r.input.round_id), int(r.input.tick), int(r.started_us - r.queued_us), int(r.finished_us - r.started_us)]
+	if int(r.get("schema_version", 1)) >= 2:
+		var sample: Dictionary = r.input.senses.vision
+		_metrics.text += "  ·  eye sample #%d at tick %d (age %d, %s%s)" % [int(sample.sample_id), int(sample.sample_tick), (int(r.input.tick) - int(sample.sample_tick)) & 0xffffffff, sample.status, ", new" if r.input.senses.vision_is_new else ", retained"]
+	else:
+		_metrics.text += "  ·  schema 1 wander record"
+	if int(r.get("schema_version", 1)) >= 4:
+		var nose: Dictionary = r.input.senses.olfaction
+		_metrics.text += "  ·  nose sample #%d at tick %d (%d readings, %s%s)" % [int(nose.sample_id), int(nose.sample_tick), int(nose.reading_count), nose.status, ", new" if r.input.senses.olfaction_is_new else ", retained"]
+	elif int(r.get("schema_version", 1)) >= 2:
+		_metrics.text += "  ·  olfaction not recorded (schema %d)" % int(r.schema_version)
 	_step_label.text = "Recorded decision #%d  ·  event %d / %d  ·  %s" % [int(r.sequence), event_cursor, r.nodes.size(), "playback frozen; battle continues" if paused else "following live host decisions"]
 	_pause.text = "Resume trace" if paused else "Pause trace"
 	_selected_node = r.nodes[event_cursor - 1] if event_cursor > 0 else {}
-	_tab_dirty = [true, true, true, true]
+	_tab_dirty = [true, true, true, true, true, true]
 	_render_active_tab()
 
 
@@ -330,16 +362,26 @@ func _render_active_tab() -> void:
 		2:
 			_payload.text = "Complete recorded decision (including its eventual outcome):\n\n" + JSON.stringify(r, "  ")
 		3:
+			_vision.present(r, event_cursor, _host_view)
+		4:
 			_spatial.present(r, event_cursor)
+		5:
+			_search.present(r)
 
 
 func _node_selected(node: Dictionary) -> void:
 	_selected_node = node
 	var payload: Dictionary = {"event": node}
+	var current := int(selected.get("schema_version", 1)) >= 2
+	var evidence: Dictionary = Reader.evidence_for(selected, int(node.get("reference", 0)), int(node.get("subject", 0))) if current else {}
+	if not evidence.is_empty(): payload["evidence_referenced_by_this_branch"] = evidence
 	if node.stage == "Input": payload["received"] = selected.input; payload["configuration"] = selected.config
-	elif node.stage == "State": payload["private_state_before"] = selected.before
+	elif node.stage == "State":
+		payload["private_memory_before"] = selected.before.get("memory", selected.before)
+		payload["attention_before"] = selected.before.get("attention", {})
 	elif node.stage == "Decision": payload["reason"] = selected.decision_reason; payload["requested"] = selected.after.last.requested
 	elif node.stage == "Outcome": payload["confirmed_result"] = selected.result; payload["private_state_after_feedback"] = selected.after
+	if current and _host_view: payload["host_diagnostics_developer_only"] = selected.host_audit
 	_details.text = JSON.stringify(payload, "  ")
 
 
@@ -404,7 +446,7 @@ func _refresh_status() -> void:
 	var data: Dictionary = live_reader.snapshot
 	if int(selected.get("truncated_nodes", 0)) > 0:
 		_status.text += "  ·  WARNING: %d branch events truncated" % int(selected.truncated_nodes)
-	_footer.text = "Retained: %d decisions  ·  missed by live reader: %d  ·  host queue drops: %d  ·  writer: %s  ·  publish: %d µs\nJournals: %s/ai-%d.jsonl (+ 3 rotated segments, 8 MiB each). Vision, mood and learning are not implemented." % [reader.records.size(), live_reader.missed_live_records, int(data.get("dropped_records", 0)), "OK" if str(data.get("writer_error", "")).is_empty() else data.writer_error, int(data.get("publish_us", 0)), trace_dir, observer_id]
+	_footer.text = "Retained: %d decisions  ·  missed by live reader: %d  ·  host queue drops: %d  ·  oversized drops: %d  ·  writer: %s  ·  publish: %d µs\nJournals: %s/ai-%d.jsonl (+ 3 rotated segments, 8 MiB each). Vision, olfaction and private search are recorded (schema 4); hearing, mood and learning are not implemented." % [reader.records.size(), live_reader.missed_live_records, int(data.get("dropped_records", 0)), int(data.get("oversized_records", 0)), "OK" if str(data.get("writer_error", "")).is_empty() else data.writer_error, int(data.get("publish_us", 0)), trace_dir, observer_id]
 	_footer.text += "\nQA recording: %s · %d frames · %.1f / 128 MiB · make replay" % [str(data.get("replay_status", "waiting")), int(data.get("replay_frames", 0)), float(data.get("replay_bytes", 0)) / 1048576.0]
 	_footer.text += "\nUI selection: %d µs · background read/validation: %d µs · visible rows drawn: %d" % [_selection_us, _reader_us, _timeline.drawn_rows]
 
@@ -431,7 +473,8 @@ func _write_status() -> void:
 		"owner_id": observer_id, "run_id": run_id, "fingerprint": content.fingerprint.hex_encode(), "last_sequence": live_reader.last_sequence,
 		"visual_generation": _generation, "reload_error": _reload_error, "reader_error": live_reader.error,
 		"paused": paused, "offline": offline, "event_cursor": event_cursor, "selected_sequence": selected.get("sequence", 0),
-		"worker_id": selected.get("worker_id", 0), "nodes": selected.get("nodes", []).size()}
+		"worker_id": selected.get("worker_id", 0), "nodes": selected.get("nodes", []).size(),
+		"schema": selected.get("schema_version", 0), "host_view": _host_view, "decision_reason": selected.get("decision_reason", "")}
 	value["journal_loading"] = _journal_loading
 	value["selection_us"] = _selection_us
 	value["reader_us"] = _reader_us

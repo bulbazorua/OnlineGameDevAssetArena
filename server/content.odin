@@ -7,12 +7,15 @@ import "core:math"
 import "core:mem"
 import "core:os"
 import "core:strings"
+import obs "observations"
 
 Game_Content :: struct {
     characters: [dynamic]Character_Definition,
     fingerprint: [32]u8,
     terrains: [dynamic]Terrain_Definition,
     arenas: [dynamic]Arena_Definition,
+    senses: [dynamic]Sense_Profile,
+    trainer_emitter: obs.Scent_Emitter,
 }
 
 content_destroy :: proc(content: ^Game_Content) {
@@ -22,9 +25,11 @@ content_destroy :: proc(content: ^Game_Content) {
     }
     delete(content.characters)
     for terrain in content.terrains { delete(terrain.key); delete(terrain.display_name) }
-    for arena in content.arenas { delete(arena.key); delete(arena.display_name); delete(arena.cells); delete(arena.elevations) }
+    for arena in content.arenas { delete(arena.key); delete(arena.display_name); delete(arena.cells); delete(arena.elevations); delete(arena.opaque); delete(arena.scent_media) }
+    for profile in content.senses { delete(profile.key) }
     delete(content.terrains)
     delete(content.arenas)
+    delete(content.senses)
     content^ = {}
 }
 
@@ -36,11 +41,11 @@ content_character :: proc(content: ^Game_Content, id: u16) -> ^Character_Definit
 }
 
 // Sorted relative paths define the cross-language compatibility fingerprint.
-CONTENT_FILES :: [3]string{"arenas.json", "characters.json", "terrains.json"}
+CONTENT_FILES :: [4]string{"arenas.json", "characters.json", "senses.json", "terrains.json"}
 
 content_load :: proc(content: ^Game_Content, directory: string) -> (ok: bool) {
     defer if !ok { content_destroy(content) }
-    files: [3][]u8
+    files: [4][]u8
     defer for data in files { delete(data) }
     for relative_path, index in CONTENT_FILES {
         path := fmt.aprintf("%s/%s", directory, relative_path)
@@ -56,8 +61,12 @@ content_load :: proc(content: ^Game_Content, directory: string) -> (ok: bool) {
         fmt.eprintln("[host] Invalid character catalog: characters.json")
         return false
     }
-    if !content_parse_extra(content, files[2], .Terrains) {
+    if !content_parse_extra(content, files[3], .Terrains) {
         fmt.eprintln("[host] Invalid terrain catalog: terrains.json")
+        return false
+    }
+    if !content_parse_extra(content, files[2], .Senses) {
+        fmt.eprintln("[host] Invalid sense catalog or character bindings: senses.json")
         return false
     }
     if !content_parse_extra(content, files[0], .Arenas) {
@@ -65,11 +74,11 @@ content_load :: proc(content: ^Game_Content, directory: string) -> (ok: bool) {
         return false
     }
     content.fingerprint = content_digest(files)
-    fmt.printfln("[host] Loaded %d characters, %d terrains, %d arenas.", len(content.characters), len(content.terrains), len(content.arenas))
+    fmt.printfln("[host] Loaded %d characters, %d terrains, %d sense profiles, %d arenas.", len(content.characters), len(content.terrains), len(content.senses), len(content.arenas))
     return true
 }
 
-Content_Kind :: enum { Terrains, Arenas }
+Content_Kind :: enum { Terrains, Arenas, Senses }
 content_parse_extra :: proc(content: ^Game_Content, data: []u8, kind: Content_Kind) -> bool {
     temporary: mem.Dynamic_Arena
     mem.dynamic_arena_init(&temporary, alignment = 64)
@@ -80,10 +89,11 @@ content_parse_extra :: proc(content: ^Game_Content, data: []u8, kind: Content_Ki
     root, root_ok := value.(json.Object)
     if !root_ok { return false }
     schema, schema_ok := content_integer(root["schema_version"])
-    if !schema_ok || !(schema == 1 || kind == .Arenas && schema == 2) { return false }
+    if !schema_ok { return false }
     switch kind {
-    case .Terrains: return content_parse_terrains(content, root)
-    case .Arenas: return content_parse_arenas(content, root)
+    case .Terrains: return schema == 3 && content_parse_terrains(content, root)
+    case .Arenas: return (schema == 1 || schema == 2) && content_parse_arenas(content, root)
+    case .Senses: return schema == 2 && content_parse_senses(content, root)
     }
     return false
 }
@@ -98,7 +108,7 @@ content_hash_file :: proc(hash: ^sha2.Context_256, path: string, data: []u8) {
     sha2.update(hash, data)
 }
 
-content_digest :: proc(files: [3][]u8) -> (digest: [32]u8) {
+content_digest :: proc(files: [4][]u8) -> (digest: [32]u8) {
     hash: sha2.Context_256
     sha2.init_256(&hash)
     for path, index in CONTENT_FILES { content_hash_file(&hash, path, files[index]) }

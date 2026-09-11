@@ -1,6 +1,8 @@
 package main
 
 import ai "ai"
+import obs "observations"
+import "perception"
 import "core:encoding/json"
 import "core:fmt"
 import "core:os"
@@ -9,9 +11,14 @@ import "core:thread"
 import "core:time"
 
 AI_DEBUG_QUEUE :: 256
-AI_DEBUG_HISTORY :: 128
+AI_DEBUG_HISTORY :: 80
 AI_DEBUG_LOG_BYTES :: 8 * 1024 * 1024
 AI_DEBUG_OLD_LOGS :: 3
+// Trace schema 4 also records the consumed nose sample, private scent memory,
+// the scent-driven search evidence and a separate host olfaction audit.
+AI_DEBUG_SCHEMA :: 4
+// Records and recent history are bounded; oversized diagnostics are counted.
+AI_DEBUG_RECORD_LIMIT :: 48 * 1024
 
 AI_Debug_Job :: struct {
     is_world: bool,
@@ -25,14 +32,27 @@ AI_Debug_Record :: struct {
     definition_id, map_id: u16,
     facing: u8,
     input: ai.Decision_Context,
-    config: ai.Wander_Config,
+    config: ai.Observe_Config,
     before, after: ai.Agent,
     decision_reason: ai.Decision_Reason,
     result: ai.Action_Result,
     position_after: [2]f32,
+    facing_after: u8,
+    audit: perception.Vision_Audit, // Host-only developer evidence; never a brain input.
+    scent_audit: perception.Olfaction_Audit,
     worker_id: int,
     queued_us, started_us, finished_us: i64,
     trace: ai.Trace_Buffer,
+    // Writer-filled display geometry, cached per sample. Never touched on the
+    // simulation or creature threads.
+    fan: [perception.FAN_RAYS]obs.Vector,
+    fan_count: int,
+}
+Vision_Audit_View :: struct {
+    sample_id: u32,
+    origin_opaque: bool,
+    candidates: []perception.Candidate_Audit,
+    sight_tests, merged_cues: int,
 }
 // Portable view: slices refer only to writer-owned storage during serialization.
 AI_Debug_Record_View :: struct {
@@ -43,30 +63,49 @@ AI_Debug_Record_View :: struct {
     definition_id, map_id: u16,
     facing: u8,
     input: ai.Decision_Context,
-    config: ai.Wander_Config,
+    config: ai.Observe_Config,
     before, after: ai.Agent,
     decision_reason: ai.Decision_Reason,
     result: ai.Action_Result,
     position_after: [2]f32,
+    facing_after: u8,
     worker_id: int,
     queued_us, started_us, finished_us: i64,
     nodes: []ai.Trace_Node,
     truncated_nodes: int,
+    host_audit: Vision_Audit_View,
+    host_scent_audit: perception.Olfaction_Audit,
+    sight_fan: []obs.Vector,
 }
 AI_Debug_Snapshot :: struct {
     schema_version: int,
     run_id, fingerprint: string,
     owner_id: int,
     published_us: i64,
-    dropped_records, overwritten_records: u64,
+    dropped_records, overwritten_records, oversized_records: u64,
     writer_error: string,
     publish_us: i64,
-    log_limit_bytes, retained_segments: int,
+    log_limit_bytes, retained_segments, record_limit_bytes: int,
     records: []AI_Debug_Record_View,
     replay_status: string,
     replay_frames: u64,
     replay_bytes: int,
 }
+Debug_Grid :: struct { map_id: u16, grid: perception.Opacity_Grid }
+Fan_Cache :: struct {
+    valid: bool,
+    round_id, observer, sample_id: u32,
+    count: int,
+    points: [perception.FAN_RAYS]obs.Vector,
+}
+// When one receptor's sample first reached a brain. Each sense keeps its own
+// clock, so a fresh smell never makes an older eye sample look newly delivered.
+Sense_Delivery :: struct {
+    valid: bool,
+    round_id, observer, sample_id: u32,
+    delivered_us: i64,
+}
+Delivery_Clocks :: struct { vision, olfaction: Sense_Delivery }
 // Heap-owned and never moved after starting. Queue fields alone need the mutex.
 AI_Debug :: struct {
     writer: ^thread.Thread,
@@ -79,8 +118,11 @@ AI_Debug :: struct {
     sequence: [MAX_PLAYERS]u64, // Host-only counters, including dropped records.
     directory, run_id, fingerprint: string,
     origin: time.Tick,
+    origin_unix_us: i64,
+    sense_world: Sense_Debug_World,
     history: [MAX_PLAYERS][AI_DEBUG_HISTORY]AI_Debug_Record,
     totals: [MAX_PLAYERS]u64,
+    oversized: [MAX_PLAYERS]u64,
     files: [MAX_PLAYERS]^os.File,
     bytes: [MAX_PLAYERS]int,
     log_limit: int,
@@ -89,6 +131,12 @@ AI_Debug :: struct {
     world_sequence: u64, // Host-only; read by the writer only after shutdown handoff.
     seed: u32,
     replay: Replay_Writer,
+    grids: []Debug_Grid, // Writer-owned immutable opacity copies, prepared at open.
+    fans: [MAX_PLAYERS]Fan_Cache,
+    delivery: [MAX_PLAYERS]Delivery_Clocks,
+    scent_mutex: sync.Mutex, // Guards only the field capture handed to the writer.
+    scent_capture: Scent_Debug_Capture,
+    scent_captured_steps: u32,
 }
 
 ai_debug_options_valid :: proc(options: Options) -> bool {
@@ -104,7 +152,7 @@ ai_debug_options_valid :: proc(options: Options) -> bool {
     return true
 }
 
-ai_debug_open :: proc(directory, run_id: string, fingerprint: [32]u8, log_limit: int = AI_DEBUG_LOG_BYTES, seed: u32 = 0) -> ^AI_Debug {
+ai_debug_open :: proc(directory, run_id: string, fingerprint: [32]u8, content: ^Game_Content = nil, log_limit: int = AI_DEBUG_LOG_BYTES, seed: u32 = 0) -> ^AI_Debug {
     if directory == "" { return nil }
     when !ODIN_DEBUG { return nil }
     debug := new(AI_Debug)
@@ -113,9 +161,21 @@ ai_debug_open :: proc(directory, run_id: string, fingerprint: [32]u8, log_limit:
     digest := fingerprint
     debug.fingerprint = ai_debug_hex(digest[:])
     debug.origin = time.tick_now()
+    debug.origin_unix_us = time.to_unix_nanoseconds(time.now()) / 1000
     debug.log_limit = max(1024, log_limit)
     debug.seed = seed
     debug.replay.limit = REPLAY_LIMIT_BYTES
+    debug.replay.line_limit = REPLAY_LINE_LIMIT
+    if content != nil {
+        // Copy opacity outside the simulation tick; the writer alone reads it.
+        debug.grids = make([]Debug_Grid, len(content.arenas))
+        for &arena, index in content.arenas {
+            source := arena_opacity_grid(&arena)
+            grid := perception.Opacity_Grid{width = source.width, height = source.height, tile_size = source.tile_size, opaque = make([]bool, len(source.opaque))}
+            copy(grid.opaque, source.opaque)
+            debug.grids[index] = {arena.id, grid}
+        }
+    }
     debug.writer = thread.create(ai_debug_writer)
     debug.writer.data = debug
     thread.start(debug.writer)
@@ -130,6 +190,8 @@ ai_debug_close :: proc(debug: ^AI_Debug) {
     sync.cond_signal(&debug.ready)
     thread.join(debug.writer)
     thread.destroy(debug.writer)
+    for entry in debug.grids { delete(entry.grid.opaque) }
+    delete(debug.grids)
     delete(debug.fingerprint)
     free(debug)
 }
@@ -157,11 +219,48 @@ ai_debug_push :: proc(debug: ^AI_Debug, job: AI_Debug_Job) {
     sync.cond_signal(&debug.ready)
 }
 
+// Writer-side display fan for the consumed sample, cached by round/observer/sample
+// so retained samples do not repeat the ray queries on every decision.
+ai_debug_attach_fan :: proc(debug: ^AI_Debug, record: ^AI_Debug_Record) {
+    record.fan_count = 0
+    sample := record.input.senses.vision
+    if sample.status != .Sampled { return }
+    cache := &debug.fans[record.owner_id - 1]
+    if cache.valid && cache.round_id == sample.round_id && cache.observer == sample.observer && cache.sample_id == sample.sample_id {
+        record.fan, record.fan_count = cache.points, cache.count
+        return
+    }
+    for entry in debug.grids {
+        if entry.map_id != record.map_id { continue }
+        record.fan_count = perception.vision_fan(entry.grid, sample.pose, sample.profile, &record.fan)
+        break
+    }
+    cache^ = {valid = true, round_id = sample.round_id, observer = sample.observer, sample_id = sample.sample_id,
+        count = record.fan_count, points = record.fan}
+}
+
+// Remember the first delivery of a new sample. A repeated decision with the same
+// sample keeps the original time; a sample whose first record was lost is unknown.
+@(private = "file")
+delivery_note :: proc(clock: ^Sense_Delivery, round_id, observer, sample_id: u32, is_new: bool, queued_us: i64) {
+    if clock.valid && clock.round_id == round_id && clock.observer == observer && clock.sample_id == sample_id { return }
+    clock^ = {valid = true, round_id = round_id, observer = observer, sample_id = sample_id, delivered_us = queued_us if is_new else -1}
+}
+
+ai_debug_note_delivery :: proc(debug: ^AI_Debug, record: ^AI_Debug_Record) {
+    clocks := &debug.delivery[record.owner_id - 1]
+    eye := record.input.senses.vision
+    if eye.status == .Sampled { delivery_note(&clocks.vision, eye.round_id, eye.observer, eye.sample_id, record.input.senses.vision_is_new, record.queued_us) }
+    nose := record.input.senses.olfaction
+    if nose.status == .Sampled { delivery_note(&clocks.olfaction, nose.round_id, nose.observer, nose.sample_id, record.input.senses.olfaction_is_new, record.queued_us) }
+}
+
 ai_debug_view :: proc(debug: ^AI_Debug, record: ^AI_Debug_Record) -> AI_Debug_Record_View {
     r := record
-    return {1, debug.run_id, debug.fingerprint, r.sequence, r.owner_id, r.definition_id, r.map_id,
-        r.facing, r.input, r.config, r.before, r.after, r.decision_reason, r.result, r.position_after, r.worker_id,
-        r.queued_us, r.started_us, r.finished_us, r.trace.nodes[:r.trace.count], r.trace.truncated}
+    audit := Vision_Audit_View{r.audit.sample_id, r.audit.origin_opaque, r.audit.candidates[:r.audit.candidate_count], r.audit.sight_tests, r.audit.merged_cues}
+    return {AI_DEBUG_SCHEMA, debug.run_id, debug.fingerprint, r.sequence, r.owner_id, r.definition_id, r.map_id,
+        r.facing, r.input, r.config, r.before, r.after, r.decision_reason, r.result, r.position_after, r.facing_after, r.worker_id,
+        r.queued_us, r.started_us, r.finished_us, r.trace.nodes[:r.trace.count], r.trace.truncated, audit, r.scent_audit, r.fan[:r.fan_count]}
 }
 
 ai_debug_error :: proc(debug: ^AI_Debug, message: string) {
@@ -175,6 +274,11 @@ ai_debug_log :: proc(debug: ^AI_Debug, record: ^AI_Debug_Record) {
     data, error := json.marshal(view, {use_enum_names = true})
     if error != nil { ai_debug_error(debug, "Cannot serialize trace"); return }
     defer delete(data)
+    if len(data) > AI_DEBUG_RECORD_LIMIT {
+        debug.oversized[i] += 1
+        ai_debug_error(debug, "Dropped an oversized trace record")
+        return
+    }
     path := fmt.aprintf("%s/ai-%d.jsonl", debug.directory, i + 1)
     defer delete(path)
     if debug.bytes[i] > 0 && debug.bytes[i] + len(data) + 1 > debug.log_limit {
@@ -202,68 +306,125 @@ ai_debug_log :: proc(debug: ^AI_Debug, record: ^AI_Debug_Record) {
     debug.bytes[i] += int(written + newline)
 }
 
+// One creature's recent-history snapshot: the expensive part of the writer's work.
+ai_debug_publish_owner :: proc(debug: ^AI_Debug, owner: int, dropped: u64) {
+    views: [AI_DEBUG_HISTORY]AI_Debug_Record_View
+    total := debug.totals[owner]
+    count := int(min(total, u64(AI_DEBUG_HISTORY)))
+    for j in 0..<count {
+        index := int((total - u64(count) + u64(j)) % AI_DEBUG_HISTORY)
+        views[j] = ai_debug_view(debug, &debug.history[owner][index])
+    }
+    snapshot := AI_Debug_Snapshot{AI_DEBUG_SCHEMA, debug.run_id, debug.fingerprint, owner + 1,
+        i64(time.tick_since(debug.origin) / time.Microsecond), dropped, total - u64(count), debug.oversized[owner],
+        debug.last_error, debug.publish_us, debug.log_limit, AI_DEBUG_OLD_LOGS + 1, AI_DEBUG_RECORD_LIMIT, views[:count],
+        debug.replay.status, debug.replay.frames, debug.replay.bytes}
+    data, error := json.marshal(snapshot, {use_enum_names = true})
+    if error != nil { ai_debug_error(debug, "Cannot serialize debugger snapshot"); return }
+    defer delete(data)
+    path := fmt.aprintf("%s/ai-%d.json", debug.directory, owner + 1)
+    defer delete(path)
+    temporary := fmt.aprintf("%s.tmp", path)
+    defer delete(temporary)
+    if os.write_entire_file(temporary, data) != nil || os.rename(temporary, path) != nil {
+        ai_debug_error(debug, "Cannot publish debugger snapshot")
+    }
+}
+
 ai_debug_publish :: proc(debug: ^AI_Debug, dropped: u64) {
     start := time.tick_now()
-    for i in 0..<MAX_PLAYERS {
-        views: [AI_DEBUG_HISTORY]AI_Debug_Record_View
-        total := debug.totals[i]
-        count := int(min(total, u64(AI_DEBUG_HISTORY)))
-        for j in 0..<count {
-            index := int((total - u64(count) + u64(j)) % AI_DEBUG_HISTORY)
-            views[j] = ai_debug_view(debug, &debug.history[i][index])
-        }
-        snapshot := AI_Debug_Snapshot{1, debug.run_id, debug.fingerprint, i + 1,
-            i64(time.tick_since(debug.origin) / time.Microsecond), dropped, total - u64(count),
-            debug.last_error, debug.publish_us, debug.log_limit, AI_DEBUG_OLD_LOGS + 1, views[:count],
-            debug.replay.status, debug.replay.frames, debug.replay.bytes}
-        data, error := json.marshal(snapshot, {use_enum_names = true})
-        if error != nil { ai_debug_error(debug, "Cannot serialize debugger snapshot"); continue }
-        path := fmt.aprintf("%s/ai-%d.json", debug.directory, i + 1)
-        temporary := fmt.aprintf("%s.tmp", path)
-        if os.write_entire_file(temporary, data) != nil || os.rename(temporary, path) != nil {
-            ai_debug_error(debug, "Cannot publish debugger snapshot")
-        }
-        delete(temporary)
-        delete(path)
-        delete(data)
-    }
+    for owner in 0..<MAX_PLAYERS { ai_debug_publish_owner(debug, owner, dropped) }
     debug.publish_us = i64(time.tick_since(start) / time.Microsecond)
 }
 
-ai_debug_writer :: proc(t: ^thread.Thread) {
-    debug := cast(^AI_Debug)t.data
-    previous := time.tick_now()
+// Handle one queued job: a world capture feeds replay and the lifecycle record;
+// a decision record gets its display fan and delivery clock, then history and journal.
+@(private = "file")
+ai_debug_consume :: proc(debug: ^AI_Debug, job: ^AI_Debug_Job) {
+    if job.is_world {
+        debug.sense_world = job.world.senses
+        replay_capture(debug, &job.world)
+        return
+    }
+    record := &job.record
+    i := record.owner_id - 1
+    ai_debug_attach_fan(debug, record)
+    ai_debug_note_delivery(debug, record)
+    debug.history[i][debug.totals[i] % AI_DEBUG_HISTORY] = record^
+    debug.totals[i] += 1
+    ai_debug_log(debug, record)
+}
+
+Writer_Drain :: struct {
+    fresh_sample, stop: bool,
+    dropped: u64,
+}
+
+// Process everything queued right now. With `wait` the first job may be awaited
+// briefly; the pass ends when the queue is empty.
+@(private = "file")
+ai_debug_drain :: proc(debug: ^AI_Debug, wait: bool) -> (drain: Writer_Drain) {
+    first := wait
     for {
         job: AI_Debug_Job
         have_record := false
         sync.mutex_lock(&debug.mutex)
-        if debug.count == 0 && !debug.stopping { sync.cond_wait_with_timeout(&debug.ready, &debug.mutex, 100 * time.Millisecond) }
+        if first && debug.count == 0 && !debug.stopping { sync.cond_wait_with_timeout(&debug.ready, &debug.mutex, 100 * time.Millisecond) }
         if debug.count > 0 {
             job = debug.queue[debug.head]
             debug.head = (debug.head + 1) % len(debug.queue)
             debug.count -= 1
             have_record = true
         }
-        stop := debug.stopping && debug.count == 0 && !have_record
-        dropped := debug.dropped
+        drain.stop = debug.stopping && debug.count == 0 && !have_record
+        drain.dropped = debug.dropped
         sync.mutex_unlock(&debug.mutex)
-        if have_record {
-            if job.is_world {
-                replay_capture(debug, &job.world)
-            } else {
-                record := &job.record
-                i := record.owner_id - 1
-                debug.history[i][debug.totals[i] % AI_DEBUG_HISTORY] = record^
-                debug.totals[i] += 1
-                ai_debug_log(debug, record)
-            }
+        if !have_record { return }
+        ai_debug_consume(debug, &job)
+        if !job.is_world && (job.record.input.senses.vision_is_new || job.record.input.senses.olfaction_is_new) { drain.fresh_sample = true }
+        first = false
+    }
+}
+
+@(private = "file")
+ai_debug_publish_live :: proc(debug: ^AI_Debug) {
+    ai_debug_publish_senses(debug)
+    ai_debug_publish_search(debug)
+}
+
+ai_debug_writer :: proc(t: ^thread.Thread) {
+    debug := cast(^AI_Debug)t.data
+    previous := time.tick_now()
+    previous_senses := previous
+    previous_scent := previous
+    for {
+        drain := ai_debug_drain(debug, true)
+        if drain.stop { replay_close(debug) }
+        if drain.stop || drain.fresh_sample || time.tick_since(previous_senses) >= 50 * time.Millisecond {
+            ai_debug_publish_live(debug)
+            previous_senses = time.tick_now()
         }
-        if stop { replay_close(debug) }
-        if stop || time.tick_since(previous) >= 250 * time.Millisecond {
-            ai_debug_publish(debug, dropped)
+        if drain.stop || time.tick_since(previous_scent) >= 100 * time.Millisecond {
+            ai_debug_publish_scent(debug)
+            previous_scent = time.tick_now()
+        }
+        if drain.stop || time.tick_since(previous) >= 250 * time.Millisecond {
+            // A fresh sample must never wait behind both history snapshots: catch up between them.
+            start := time.tick_now()
+            for owner in 0..<MAX_PLAYERS {
+                ai_debug_publish_owner(debug, owner, drain.dropped)
+                if owner + 1 == MAX_PLAYERS { break }
+                between := ai_debug_drain(debug, false)
+                drain.dropped = between.dropped
+                if between.fresh_sample {
+                    ai_debug_publish_live(debug)
+                    previous_senses = time.tick_now()
+                }
+            }
+            debug.publish_us = i64(time.tick_since(start) / time.Microsecond)
             previous = time.tick_now()
         }
-        if stop { break }
+        if drain.stop { break }
     }
     for file in debug.files { if file != nil { os.close(file) } }
 }

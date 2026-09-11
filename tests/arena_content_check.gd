@@ -38,19 +38,28 @@ func _run() -> void:
 				var cell := Vector2i(x, y)
 				var terrain: ArenaCatalog.TerrainDefinition = content.arena_catalog.terrains_by_id[arena.terrain_id_at(cell)]
 				var data: TileData = world.terrain_layer.get_cell_tile_data(cell)
-				_expect(data != null and data.get_custom_data("terrain_id") == terrain.id and data.get_custom_data("terrain_key") == terrain.key and data.get_custom_data("walkable") == terrain.walkable, "Rendered tile metadata differs from shared terrain data.")
+				_expect(data != null and data.get_custom_data("terrain_id") == terrain.id and data.get_custom_data("terrain_key") == terrain.key and data.get_custom_data("walkable") == terrain.walkable and data.get_custom_data("blocks_vision") == terrain.blocks_vision and data.get_custom_data("scent") == terrain.scent, "Rendered tile metadata differs from shared terrain data.")
+				_expect(content.arena_catalog.blocks_sight(arena, cell) == terrain.blocks_vision, "Sight-blocking helper disagrees with the terrain catalog.")
+				_expect(content.arena_catalog.scent_medium(arena, cell) == terrain.scent, "Scent-medium helper disagrees with the terrain catalog.")
 				_expect(data != null and data.get_custom_data("elevation") == arena.elevation_at(cell), "Rendered elevation differs from shared map data.")
 				seen[terrain.id] = true
 		for spawn in arena.spawns:
 			var center: Vector2 = world.to_local(world.terrain_layer.to_global(world.terrain_layer.map_to_local(spawn)))
 			_expect(center.is_equal_approx(arena.cell_center(spawn)), "TileMapLayer center differs from shared world coordinates.")
 	_expect(seen.size() == 10, "Shipped maps do not demonstrate every terrain type.")
+	var opaque := {"stone": true, "cliff": true, "forest": true, "building": true, "grass": false, "ground": false, "sand": false, "water": false, "stairs": false, "tall_grass": false}
+	var media := {"stone": "solid", "cliff": "solid", "forest": "solid", "building": "solid", "water": "water", "grass": "open", "ground": "open", "sand": "open", "stairs": "open", "tall_grass": "open"}
+	for terrain in content.arena_catalog.terrains:
+		_expect(terrain.blocks_vision == opaque[terrain.key], "Authored sight blocking differs for %s." % terrain.key)
+		_expect(terrain.scent == media[terrain.key], "Authored scent medium differs for %s." % terrain.key)
+	_expect(content.arena_catalog.blocks_sight(content.arena_catalog.arenas[0], Vector2i(-1, 0)), "Outside the map must block sight.")
+	_expect(content.arena_catalog.scent_medium(content.arena_catalog.arenas[0], Vector2i(-1, 0)) == "solid", "Outside the map must be solid for scent.")
 	world.queue_free()
 	await process_frame
-	_expect(GameProtocol.encode_command(GameProtocol.MessageKind.SELECT_ARENA, 0x04030201, 0, false, 2) == PackedByteArray([79, 71, 65, 65, 9, 9, 1, 2, 3, 4, 2, 0]), "SelectArena bytes differ from Odin.")
-	_expect(GameProtocol.encode_command(GameProtocol.MessageKind.SET_READY, 0x04030201, 4, true, 2) == PackedByteArray([79, 71, 65, 65, 9, 6, 1, 2, 3, 4, 4, 0, 2, 0, 1]), "SetReady bytes differ from Odin.")
+	_expect(GameProtocol.encode_command(GameProtocol.MessageKind.SELECT_ARENA, 0x04030201, 0, false, 2) == PackedByteArray([79, 71, 65, 65, 11, 9, 1, 2, 3, 4, 2, 0]), "SelectArena bytes differ from Odin.")
+	_expect(GameProtocol.encode_command(GameProtocol.MessageKind.SET_READY, 0x04030201, 4, true, 2) == PackedByteArray([79, 71, 65, 65, 11, 6, 1, 2, 3, 4, 4, 0, 2, 0, 1]), "SetReady bytes differ from Odin.")
 	if failures.is_empty():
-		print("PASS: full content digest, terrain/map validation, all 6720 rendered cells, terrain/elevation metadata, coordinates, spawn clearance, and arena command fixtures.")
+		print("PASS: full content digest, terrain/map validation, sight-blocking metadata, all 6720 rendered cells, terrain/elevation metadata, coordinates, spawn clearance, and arena command fixtures.")
 		quit(0)
 	else:
 		for failure in failures: push_error(failure)
@@ -65,11 +74,15 @@ func _check_invalid_definitions(directory: String) -> void:
 		var invalid := arena_root.duplicate(true)
 		invalid.arenas[0][mutation[0]] = mutation[1]
 		_expect(not catalog.parse_arenas(invalid, 12).is_empty(), "Invalid map was accepted: " + str(mutation))
-	for mutation in [["id", 0], ["key", "../grass"], ["symbol", ".."], ["walkable", 1]]:
+	for mutation in [["id", 0], ["key", "../grass"], ["symbol", ".."], ["walkable", 1], ["blocks_vision", "yes"], ["blocks_vision", null]]:
 		var catalog := ArenaCatalog.new()
 		var invalid := terrain_root.duplicate(true)
-		invalid.terrains[0][mutation[0]] = mutation[1]
-		_expect(not catalog.parse_terrains(invalid).is_empty(), "Invalid terrain was accepted.")
+		if mutation[1] == null: invalid.terrains[0].erase(mutation[0])
+		else: invalid.terrains[0][mutation[0]] = mutation[1]
+		_expect(not catalog.parse_terrains(invalid).is_empty(), "Invalid terrain was accepted: " + str(mutation))
+	var legacy := terrain_root.duplicate(true)
+	legacy.schema_version = 1
+	_expect(not ArenaCatalog.new().parse_terrains(legacy).is_empty(), "Schema-1 terrain catalog was accepted.")
 	var duplicates := terrain_root.duplicate(true)
 	duplicates.terrains.append(duplicates.terrains[0].duplicate())
 	_expect(not ArenaCatalog.new().parse_terrains(duplicates).is_empty(), "Duplicate terrain was accepted.")

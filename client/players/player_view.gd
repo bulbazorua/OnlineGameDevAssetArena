@@ -5,10 +5,7 @@ const WALK_START_POSES := 2
 const WALK_START_POSE_SECONDS := 2.0 / 60.0
 
 
-# Player1's canonical walk starts with passing, lift, then plant. Speed up
-# those first two poses once per action; subsequent loops retain the clip FPS.
-# Keep animator.elapsed on the action clock so corrections/late joins do not
-# restart this acceleration or change the host's movement timing.
+# Speed up the first two walk poses once, so the first step feels responsive.
 func present_art(role: String, facing: String, variant: String, elapsed: float) -> bool:
 	var clip_time := elapsed
 	if role == "walk" and animation_set != null:

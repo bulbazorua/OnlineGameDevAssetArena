@@ -1,40 +1,50 @@
 {
-  "schema_version": 1,
+  "schema_version": 3,
   "terrains": [
     {
       "id": 1,
       "key": "grass",
       "display_name": "Grass",
       "symbol": ".",
-      "walkable": true
+      "walkable": true,
+      "blocks_vision": false,
+      "scent": "open"
     },
     {
       "id": 2,
       "key": "ground",
       "display_name": "Ground",
       "symbol": "g",
-      "walkable": true
+      "walkable": true,
+      "blocks_vision": false,
+      "scent": "open"
     },
     {
       "id": 3,
       "key": "sand",
       "display_name": "Sand",
       "symbol": "s",
-      "walkable": true
+      "walkable": true,
+      "blocks_vision": false,
+      "scent": "open"
     },
     {
       "id": 4,
       "key": "water",
       "display_name": "Water",
       "symbol": "w",
-      "walkable": false
+      "walkable": false,
+      "blocks_vision": false,
+      "scent": "water"
     },
     {
       "id": 5,
       "key": "stone",
       "display_name": "Stone",
       "symbol": "#",
-      "walkable": false
+      "walkable": false,
+      "blocks_vision": true,
+      "scent": "solid"
     }
   ]
 }

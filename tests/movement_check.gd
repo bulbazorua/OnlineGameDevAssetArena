@@ -206,23 +206,56 @@ func _key(client: Node, key: int, pressed: bool) -> void:
 
 
 func _check_wire() -> String:
-	var bytes := PackedByteArray([79, 71, 65, 65, 9, 11, 1, 2, 3, 4, 5, 6, 7, 8, 2, 1, 0, 0, 0, 3,
+	var bytes := PackedByteArray([79, 71, 65, 65, 11, 11, 1, 2, 3, 4, 5, 6, 7, 8, 2, 1, 0, 0, 0, 3,
 		0, 1, 0, 144, 0, 0, 0, 240, 0, 0, 0, 0, 0, 0, 0, 2, 0, 0, 0, 4,
 		0, 2, 0, 240, 1, 0, 0, 240, 0, 0, 0, 0, 0, 0, 0, 3, 0, 0, 0, 1,
 		0, 1, 0, 112, 0, 0, 0, 240, 0, 0, 9, 10, 11, 12, 6, 4, 0, 0, 0, 1,
 		0, 2, 0, 16, 2, 0, 0, 240, 0, 0, 0, 0, 0, 0, 0, 90, 0, 1, 2, 0, 6, 7, 8, 0, 6, 4, 5, 6, 7,
-		1, 1, 0, 6, 7, 8, 0, 6, 4, 5, 6, 7])
+		1, 1, 0, 6, 7, 8, 0, 6, 4, 5, 6, 7, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0])
+	bytes.append_array([194, 1, 42, 0, 0, 6, 7, 8, 75, 0, 0, 1, 0, 5, 6, 7])
 	var decoded := GameProtocol.decode(bytes, 1)
 	if not decoded.error_title.is_empty() or decoded.session.round_id != 0x04030201 or decoded.session.server_tick != 0x08070605 or decoded.session.characters[0].position != Vector2(144, 240) or decoded.session.characters[1].position != Vector2(496, 240) or decoded.session.trainers[0].applied_input_sequence != 0x0c0b0a09 or decoded.session.summon_elapsed_ticks != 90: return "World-state fixture differs from Odin."
 	if decoded.session.characters[0].locomotion != 1 or decoded.session.characters[0].facing != 2 or decoded.session.characters[0].state_start_tick != 0x08070600 or decoded.session.characters[1].facing != 6: return "Character locomotion wire fields differ from Odin."
 	if decoded.session.trainers[0].locomotion != 1 or decoded.session.trainers[0].facing != 1 or decoded.session.trainers[0].state_start_tick != 0x08070600 or decoded.session.trainers[1].facing != 6: return "Trainer action clock differs from Odin."
+	if decoded.session.trainers[0].energy != 450 or decoded.session.trainers[0].energy_recovery_ticks != 42 or decoded.session.trainers[1].energy != 75 or not decoded.session.trainers[1].run_exhausted or decoded.session.trainers[0].movement_start_tick != 0x08070600: return "Trainer energy differs from Odin."
 	var input := GameProtocol.encode_input(0x04030201, 0x0c0b0a09, 6)
-	if input != PackedByteArray([79, 71, 65, 65, 9, 10, 1, 2, 3, 4, 9, 10, 11, 12, 6]): return "Input fixture differs from Odin."
+	if input != PackedByteArray([79, 71, 65, 65, 11, 10, 1, 2, 3, 4, 9, 10, 11, 12, 6]): return "Input fixture differs from Odin."
 	for length in bytes.size():
 		if GameProtocol.decode(bytes.slice(0, length), 1).error_title.is_empty(): return "Truncated world packet was accepted."
-	for edit in [[14, 1], [15, 0], [19, 0], [21, 0], [34, 16], [35, 1], [41, 1], [55, 1], [59, 2], [61, 0], [75, 3], [81, 1], [95, 91], [97, 2], [98, 8], [99, 255], [109, 2], [110, 8], [111, 255], [4, 8]]:
+	for edit in [[14, 1], [15, 0], [19, 0], [21, 0], [34, 16], [35, 1], [41, 1], [55, 1], [59, 2], [61, 0], [75, 3], [81, 1], [95, 91], [97, 2], [98, 8], [99, 255], [109, 3], [110, 8], [111, 255], [132, 3], [133, 61], [134, 2], [135, 255], [4, 8]]:
 		var corrupt := bytes.duplicate()
 		corrupt[edit[0]] = edit[1]
 		if GameProtocol.decode(corrupt, 1).error_title.is_empty(): return "Invalid world state was accepted: " + str(edit)
 	if GameProtocol.decode(bytes, 0).error_title.is_empty(): return "Wrong world channel was accepted."
+	return _check_alert_wire(bytes)
+
+
+func _check_alert_wire(bytes: PackedByteArray) -> String:
+	var tick := bytes.decode_u32(10)
+	var active := bytes.duplicate()
+	active[121] = 1
+	active.encode_u32(122, tick - 5)
+	var decoded := GameProtocol.decode(active, 1)
+	if not decoded.error_title.is_empty() or not decoded.session.characters[0].target_alert or decoded.session.characters[0].target_acquired_tick != tick - 5 or decoded.session.characters[1].target_alert:
+		return "Target alert or original acquisition time was not preserved independently."
+	for invalid_tick in [tick + 1, tick - 60]:
+		var corrupt := active.duplicate()
+		corrupt.encode_u32(122, invalid_tick)
+		if GameProtocol.decode(corrupt, 1).error_title.is_empty(): return "Future or expired target alert was accepted."
+	active[121] = 2
+	if GameProtocol.decode(active, 1).error_title.is_empty(): return "Invalid target-alert flag was accepted."
+	var legacy := PackedByteArray([79, 71, 65, 65, 9, 3, 1, 2, 3, 4, 0, 0, 0, 0, 3, 3, 0, 0, 1, 0, 3, 0, 1, 4, 0, 1, 0, 5, 6, 7, 8, 2])
+	legacy.append_array(bytes.slice(15, 121))
+	var replayed := GameProtocol.decode_recorded(legacy, 9)
+	if not replayed.error_title.is_empty() or replayed.session.characters.any(func(character): return character.target_alert): return "Protocol-9 replay invented an alert or failed to load."
+	if GameProtocol.decode(legacy, 0).error_title.is_empty(): return "Protocol-9 live transport was accepted."
+	legacy[4] = 10
+	legacy.resize(148)
+	legacy[138] = 1
+	legacy.encode_u32(139, tick - 5)
+	replayed = GameProtocol.decode_recorded(legacy, 10)
+	if not replayed.error_title.is_empty() or not replayed.session.characters[0].target_alert or replayed.session.trainers[0].energy != 600 or replayed.session.trainers[0].movement_start_tick != replayed.session.trainers[0].state_start_tick: return "Protocol-10 replay lost its alert or old movement clock."
+	if GameProtocol.decode(legacy, 0).error_title.is_empty(): return "Protocol-10 live transport was accepted."
+	legacy[126] = 2
+	if GameProtocol.decode_recorded(legacy, 10).error_title.is_empty(): return "Historical recording accepted a run state that did not exist."
 	return ""

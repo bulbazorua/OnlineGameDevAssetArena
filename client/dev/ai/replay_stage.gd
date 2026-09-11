@@ -56,6 +56,7 @@ func present(value: SessionSnapshot) -> void:
 	for state in value.characters:
 		var view: CharacterView = _view(state, false)
 		_pose(view, state)
+		view.present_target_alert(state.target_alert, float((value.server_tick - state.target_acquired_tick) & 0xffffffff) / 60.0)
 		var reveal := clampf((value.summon_elapsed_ticks - Protocol.SUMMON_REVEAL_TICKS) / 24.0, 0, 1)
 		view.visible = value.summon_elapsed_ticks >= Protocol.SUMMON_REVEAL_TICKS
 		view.modulate = Color(1, 1, 1, reveal)

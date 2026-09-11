@@ -1,6 +1,6 @@
 # Checkpoint 3E: development overlay
 
-Each client can display a **DEV / FPS / PING** panel in the upper-right corner, with collision visibility controls. The panel stays visible through Lobby, character/map selection, Countdown, and the arena, including audience windows. Each window reports its own FPS and round-trip ping to the Odin host. Collision geometry appears in the active arena only.
+Each client can display a **DEV / FPS / PING** panel in the upper-right corner, with independent physical-collision and sense visibility controls. The panel stays visible through Lobby, character/map selection, Countdown, and the arena, including audience windows. Each window reports its own FPS and round-trip ping to the Odin host. Collision geometry appears in the active arena only.
 
 ## Run in development mode
 
@@ -54,12 +54,33 @@ The drawings use each client's displayed ground positions: prediction/correction
 
 The controls accept mouse clicks without taking keyboard focus. Scrolling over the panel does not zoom an audience camera; outside the panel the normal camera controls work.
 
+## Senses and vision controls
+
+[The arena sense overlay](06k-arena-sense-overlay.md) is implemented. With the
+launcher's default `AI_DEBUG=1`, both `make dev_arena` and `make dev_vision` show
+vision automatically after the first eye sample arrives.
+
+- **F4 / Filters:** **Senses · Perception** appears first, with Vision cones,
+  Focused vision, Peripheral vision, Character P1 and Character P2 controls.
+  **Physical colliders** has its own group below it. The panel scrolls.
+- **F5 / Vision cones:** show/hide vision, independently of F3 and All colliders/None.
+- Cyan is focus; amber is periphery. The field follows the actual sampled pose,
+  range and host-clipped cover geometry, with owner and sample-age labels.
+- Stalled data is dimmed and labelled **STALE**. Disabled telemetry and audience
+  views show senses as unavailable; the audience never borrows the live feed.
+- Sense filters affect this window's drawing only. They create no physics bodies
+  and never change what a creature senses. Future senses remain unavailable.
+
+The private, bounded local feed does not enter ordinary game packets. A standalone
+`DEV=1` client without a launcher telemetry binding cannot show sampled vision.
+Dedicated live senses windows remain the next part of 6B.1.1.
+
 ## Measurements and ownership
 
 - **FPS** uses Godot's average rendered frame rate. It initially shows `--` until a positive sample is available. [Engine.get_frames_per_second](https://docs.godotengine.org/en/4.6/classes/class_engine.html#class-engine-method-get-frames-per-second)
 - **PING** is ENet's smoothed round-trip time in milliseconds for this client's connection to the host. It uses existing transport measurements, including automatic ENet pings, so no application message or Odin change is needed. This measures transport RTT, not total input-to-display delay. [ENet peer statistics and automatic ping](https://docs.godotengine.org/en/4.6/classes/class_enetpacketpeer.html)
 - Connecting/disconnected clients show **PING: --**, with immediate refresh on connection changes. FPS keeps updating while disconnected.
-- Labels refresh every 250 ms. The panel uses a separate CanvasLayer above the screen and arena HUD, so cameras and screen transitions do not move it. Only the panel consumes mouse input; the rest of the overlay passes it through.
+- FPS/ping labels refresh every 250 ms; sense status follows the current overlay. The panel uses a separate CanvasLayer above the screen and arena HUD, so cameras and screen transitions do not move it. Only the panel consumes mouse input; the rest of the overlay passes it through.
 
 `client/main.gd` owns the development-mode gate. `client/ui/debug_overlay.gd` and `.tscn` own presentation and refresh timing. `GameConnection.get_ping_ms()` exposes a read-only value, returning `-1` without a connected host. Normal runs never instantiate or update the overlay.
 
@@ -80,3 +101,5 @@ godot --path client --script "$PWD/tests/collision_overlay_check.gd" -- --server
 ```
 
 `tests/collision_overlay_check.gd` checks all four maps against movement geometry, a stair/elevation fixture, two players plus delayed audience, summon sizing, independent filters, synthesized keyboard/mouse input, normal-mode absence, camera input, minimum window layout, and map changes. Graphical captures go to `build/verification/collision-overlay/`. This test uses synthesized input rather than a physical keyboard/mouse session.
+
+Run `make check_sense_overlay` for live-feed, independent sense-filter, geometry, staleness, audience and layout checks. See [the overlay record](06k-arena-sense-overlay.md#verification) for graphical commands and evidence.

@@ -2,17 +2,18 @@ package main
 
 import "core:math"
 
-PROTOCOL_HEADER :: [5]u8{'O', 'G', 'A', 'A', 9}
+PROTOCOL_HEADER :: [5]u8{'O', 'G', 'A', 'A', 11}
 Message_Kind :: enum u8 {
     Hello = 1, Welcome = 2, Session_State = 3,
     Start_Selection = 4, Select_Character = 5, Set_Ready = 6,
     Return_To_Lobby = 7, Command_Rejected = 8, Select_Arena = 9,
-    Input = 10, World_State = 11,
+    Input = 10, World_State = 11, Dev_Reset_Search = 12,
 }
 Reject_Reason :: enum u32 { Protocol = 1, Content_Mismatch = 2 }
 Command_Reject_Reason :: enum u8 {
     None, Audience_Read_Only, Wrong_Phase, Stale_Round,
     Unknown_Character, Selection_Changed, Need_Two_Players, Unknown_Arena, Arena_Changed,
+    Dev_Only, Search_Reset_Unavailable,
 }
 Client_Command :: struct {
     kind: Message_Kind,
@@ -44,7 +45,7 @@ protocol_decode :: proc(payload: []u8, channel: u8) -> (command: Client_Command,
         command.kind = .Hello
         command.wants_audience = payload[6] == 1
         copy(command.fingerprint[:], payload[7:])
-    case u8(Message_Kind.Start_Selection), u8(Message_Kind.Return_To_Lobby):
+    case u8(Message_Kind.Start_Selection), u8(Message_Kind.Return_To_Lobby), u8(Message_Kind.Dev_Reset_Search):
         if len(payload) != 10 { return {}, false }
         command.kind = Message_Kind(payload[5])
         command.round_id = protocol_read_u32(payload[6:])
@@ -66,7 +67,7 @@ protocol_decode :: proc(payload: []u8, channel: u8) -> (command: Client_Command,
         command.round_id = protocol_read_u32(payload[6:])
         command.map_id = protocol_read_u16(payload[10:])
     case u8(Message_Kind.Input):
-        if len(payload) != 15 || payload[14] > 15 { return {}, false }
+        if len(payload) != 15 || payload[14] > 31 { return {}, false }
         command.kind = .Input
         command.round_id = protocol_read_u32(payload[6:])
         command.input_sequence = protocol_read_u32(payload[10:])
@@ -83,7 +84,7 @@ protocol_encode_welcome :: proc(player_id: u8, audience_delay_ms: u32 = 0) -> (r
     return
 }
 
-protocol_encode_session :: proc(session: ^Session) -> (result: [138]u8) {
+protocol_encode_session :: proc(session: ^Session) -> (result: [164]u8) {
     protocol_header(result[:], .Session_State)
     protocol_write_u32(result[6:], session.round_id)
     protocol_write_u32(result[10:], session.revision)
@@ -96,10 +97,12 @@ protocol_encode_session :: proc(session: ^Session) -> (result: [138]u8) {
     result[31] = session.character_count
     for index in 0..<int(session.character_count) { protocol_write_character(result[32 + index * 20:], &session.characters[index]) }
     if session.character_count == 2 {
-        for index in 0..<MAX_PLAYERS { protocol_write_character(result[72 + index * 20:], &session.trainers[index]) }
+        for index in 0..<MAX_PLAYERS { protocol_write_character(result[72 + index * 20:], &session.trainers[index].body) }
         protocol_write_u16(result[112:], session.summon_elapsed_ticks)
         for index in 0..<MAX_PLAYERS { protocol_write_locomotion(result[114 + index * 6:], &session.characters[index]) }
-        for index in 0..<MAX_PLAYERS { protocol_write_locomotion(result[126 + index * 6:], &session.trainers[index]) }
+        for index in 0..<MAX_PLAYERS { protocol_write_locomotion(result[126 + index * 6:], &session.trainers[index].body) }
+        for index in 0..<MAX_PLAYERS { protocol_write_target_alert(result[138 + index * 5:], &session.characters[index]) }
+        for index in 0..<MAX_PLAYERS { protocol_write_trainer_energy(result[148 + index * 8:], &session.trainers[index]) }
     }
     for player, index in session.players {
         offset := 20 + index * 3
@@ -117,7 +120,7 @@ protocol_encode_rejection :: proc(round_id: u32, kind: Message_Kind, reason: Com
     return
 }
 
-protocol_session_size :: proc(session: ^Session) -> int { return 138 if session.character_count == 2 else 32 }
+protocol_session_size :: proc(session: ^Session) -> int { return 164 if session.character_count == 2 else 32 }
 
 protocol_write_character :: proc(bytes: []u8, character: ^Character) {
     protocol_write_u32(bytes, character.entity_id)
@@ -129,17 +132,19 @@ protocol_write_character :: proc(bytes: []u8, character: ^Character) {
     bytes[19] = character.input_mask
 }
 
-protocol_encode_world :: proc(session: ^Session) -> (result: [121]u8) {
+protocol_encode_world :: proc(session: ^Session) -> (result: [147]u8) {
     assert(session.phase == .In_Arena && session.character_count == 2)
     protocol_header(result[:], .World_State)
     protocol_write_u32(result[6:], session.round_id)
     protocol_write_u32(result[10:], session.server_tick)
     result[14] = session.character_count
     for index in 0..<MAX_PLAYERS { protocol_write_character(result[15 + index * 20:], &session.characters[index]) }
-    for index in 0..<MAX_PLAYERS { protocol_write_character(result[55 + index * 20:], &session.trainers[index]) }
+    for index in 0..<MAX_PLAYERS { protocol_write_character(result[55 + index * 20:], &session.trainers[index].body) }
     protocol_write_u16(result[95:], session.summon_elapsed_ticks)
     for index in 0..<MAX_PLAYERS { protocol_write_locomotion(result[97 + index * 6:], &session.characters[index]) }
-    for index in 0..<MAX_PLAYERS { protocol_write_locomotion(result[109 + index * 6:], &session.trainers[index]) }
+    for index in 0..<MAX_PLAYERS { protocol_write_locomotion(result[109 + index * 6:], &session.trainers[index].body) }
+    for index in 0..<MAX_PLAYERS { protocol_write_target_alert(result[121 + index * 5:], &session.characters[index]) }
+    for index in 0..<MAX_PLAYERS { protocol_write_trainer_energy(result[131 + index * 8:], &session.trainers[index]) }
     return
 }
 
@@ -147,4 +152,16 @@ protocol_write_locomotion :: proc(bytes: []u8, character: ^Character) {
     bytes[0] = u8(character.locomotion)
     bytes[1] = u8(character.facing)
     protocol_write_u32(bytes[2:], character.state_start_tick)
+}
+
+protocol_write_target_alert :: proc(bytes: []u8, character: ^Character) {
+    bytes[0] = u8(character.target_alert)
+    protocol_write_u32(bytes[1:], character.target_acquired_tick)
+}
+
+protocol_write_trainer_energy :: proc(bytes: []u8, trainer: ^Trainer) {
+    protocol_write_u16(bytes, trainer.energy)
+    bytes[2] = trainer.energy_recovery_ticks
+    bytes[3] = u8(trainer.run_exhausted)
+    protocol_write_u32(bytes[4:], trainer.movement_start_tick)
 }

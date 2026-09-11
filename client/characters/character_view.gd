@@ -5,6 +5,7 @@ const CharacterVisual = preload("res://characters/character_visual.gd")
 const CharacterAnimationSet = preload("res://characters/character_animation_set.gd")
 const AssetScale = preload("res://presentation/asset_scale.gd")
 const Animator = preload("res://characters/character_animator.gd")
+const SurpriseHop = preload("res://characters/surprise_hop.gd")
 const PLAYER_COLORS := [Color("e0e7f2"), Color("58a6ff"), Color("ffac62")]
 var visual: CharacterVisual
 var player_id := 0
@@ -18,9 +19,13 @@ var character_id := -1
 var animator := Animator.new()
 var animate := false
 var action_label: Label
+var target_alert: Sprite2D
+var surprise_hop: SurpriseHop
+var body_lift := 0.0
 
 
 func configure(character_visual: CharacterVisual, owner_id := 0, display_radius := 24.0) -> void:
+	if surprise_hop != null: present_target_alert(false, 0.0)
 	animate = false
 	animation_set = null
 	if body_sprite != null: body_sprite.hide()
@@ -32,6 +37,7 @@ func configure(character_visual: CharacterVisual, owner_id := 0, display_radius 
 
 # Validated art consumer shared with the isolated harness. No importer or FSM.
 func configure_art(art: CharacterAnimationSet, owner_id: int, gameplay_size: float, footprint_units: float) -> void:
+	if surprise_hop != null: present_target_alert(false, 0.0)
 	animate = false
 	animation_set = art
 	visual = null
@@ -100,9 +106,13 @@ func _process(delta: float) -> void:
 func _update_animation() -> void:
 	if animate and animation_set != null:
 		present_art(animator.action, animator.facing, "default", animator.elapsed)
+	_update_action_label()
+
+
+func _update_action_label() -> void:
 	if action_label != null:
 		action_label.text = animator.action
-		var top := body_bounds().position.y if animation_set != null else -radius
+		var top := body_bounds().position.y if animation_set != null else -radius - body_lift
 		action_label.position = Vector2(-50, top - 28)
 
 
@@ -120,6 +130,7 @@ func _draw() -> void:
 		return
 	var color: Color = PLAYER_COLORS[player_id] * visual.tint
 	var points := PackedVector2Array()
+	draw_set_transform(Vector2(0, -body_lift))
 	match visual.placeholder_kind:
 		CharacterVisual.PlaceholderKind.CIRCLE:
 			draw_circle(Vector2.ZERO, radius, color, true, -1.0, true)
@@ -137,6 +148,7 @@ func _draw() -> void:
 		draw_polyline(points, color.lightened(0.25), 1.0, true)
 
 	if is_local:
+		draw_set_transform(Vector2.ZERO)
 		draw_arc(Vector2.ZERO, radius + 4, 0, TAU, 48, Color(1, 1, 1, 0.8), 1.2, true)
 
 
@@ -149,3 +161,20 @@ func present_locomotion(role: String, facing: String, seconds: float) -> void:
 	animator.elapsed = seconds
 	if animation_set != null: present_art(role, facing, "default", seconds)
 	_update_animation()
+
+
+func present_target_alert(active: bool, age_seconds: float) -> void:
+	if surprise_hop == null:
+		surprise_hop = SurpriseHop.new()
+		add_child(surprise_hop)
+		move_child(surprise_hop, 0)
+	body_lift = surprise_hop.present(active, age_seconds, radius)
+	if body_sprite != null: body_sprite.position = Vector2(0, -body_lift)
+	if animation_set == null: queue_redraw()
+	_update_action_label()
+	if target_alert == null:
+		target_alert = preload("res://characters/target_alert.gd").new()
+		add_child(target_alert)
+	var top := body_bounds().position.y if animation_set != null else -radius - body_lift
+	if action_label != null and action_label.visible: top -= 34
+	target_alert.present(active, age_seconds, top)

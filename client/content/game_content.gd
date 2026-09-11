@@ -9,8 +9,9 @@ const ArenaPresentation = preload("res://content/arena_presentation.gd")
 const TinySwordsTileset = preload("res://world/tiny_swords_tileset.gd")
 const TerrainTileset = preload("res://world/terrain_tileset.gd")
 const PlayerContent = preload("res://content/player_content.gd")
+const SenseCatalog = preload("res://content/sense_catalog.gd")
 # Sorted paths are part of the compatibility contract.
-const DATA_FILES := ["arenas.json", "characters.json", "terrains.json"]
+const DATA_FILES := ["arenas.json", "characters.json", "senses.json", "terrains.json"]
 
 class CharacterDefinition:
 	extends RefCounted
@@ -18,6 +19,10 @@ class CharacterDefinition:
 	var key: String
 	var display_name: String
 	var footprint_radius: float
+	var sense_profile: String
+	var vision: SenseCatalog.VisionProfile
+	var olfaction: SenseCatalog.OlfactionProfile
+	var emitter: SenseCatalog.ScentEmitter
 
 var characters: Array[CharacterDefinition] = []
 var by_id: Dictionary = {}
@@ -25,6 +30,7 @@ var visuals: Dictionary = {}
 var character_art: Dictionary = {}
 var player_content := PlayerContent.new()
 var arena_catalog := ArenaCatalog.new()
+var sense_catalog := SenseCatalog.new()
 var tile_set: TileSet
 var presentations: Dictionary = {}
 var tile_sets: Dictionary = {}
@@ -51,6 +57,13 @@ func load_catalog(directory := "res://content/data") -> String:
 		error = player_content.load_catalog()
 	if error.is_empty():
 		error = arena_catalog.parse_terrains(parsed["terrains.json"])
+	if error.is_empty():
+		error = sense_catalog.parse(parsed["senses.json"], characters.map(func(definition): return definition.key))
+		for definition in characters:
+			definition.sense_profile = sense_catalog.bindings.get(definition.key, "")
+			definition.vision = sense_catalog.vision_for(definition.key)
+			definition.olfaction = sense_catalog.olfaction_for(definition.key)
+			definition.emitter = sense_catalog.emitter_for(definition.key)
 	if error.is_empty():
 		var radius := 0.0
 		for character in characters:
@@ -86,6 +99,7 @@ func _clear() -> void:
 	player_content.art = null
 	fingerprint.clear()
 	arena_catalog.clear()
+	sense_catalog.clear()
 	tile_set = null
 	presentations.clear()
 	tile_sets.clear()

@@ -8,7 +8,7 @@ import "core:time"
 Brain_Request :: struct {
     agent: ai.Agent,
     ctx: ai.Decision_Context,
-    config: ai.Wander_Config,
+    config: ai.Observe_Config,
     trace: bool,
     submitted: time.Tick,
 }
@@ -81,7 +81,8 @@ brain_worker_run :: proc(t: ^thread.Thread) {
             queue_us = i64(time.tick_diff(input.submitted, start) / time.Microsecond)}
         trace: ^ai.Trace_Buffer
         if input.trace { trace = &output.trace }
-        // The worker's agent/context are values. No pointer to Session or another brain.
+        // The worker's agent/context are values: its own sample, self condition and
+        // private memory. No pointer to Session, terrain, candidates or another brain.
         output.intent = ai.agent_decide(&output.agent, input.ctx, input.config, trace)
         output.compute_us = i64(time.tick_since(start) / time.Microsecond)
         worker.response = output

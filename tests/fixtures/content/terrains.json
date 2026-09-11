@@ -1,1 +1,1 @@
-{"schema_version":1,"terrains":[{"id":1,"key":"grass","display_name":"Grass","symbol":".","walkable":true},{"id":5,"key":"stone","display_name":"Stone","symbol":"#","walkable":false}]}
+{"schema_version":3,"terrains":[{"id":1,"key":"grass","display_name":"Grass","symbol":".","walkable":true,"blocks_vision":false,"scent":"open"},{"id":5,"key":"stone","display_name":"Stone","symbol":"#","walkable":false,"blocks_vision":true,"scent":"solid"}]}

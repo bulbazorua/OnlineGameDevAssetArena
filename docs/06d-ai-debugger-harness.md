@@ -1,8 +1,23 @@
 # MoPock debugger: dedicated threads, telemetry and decision traces
 
 Status: **6A.1 implemented and verified, 2026-09-10**. The telemetry contract below
-was written before implementation. This harness precedes
-[vision](06c-senses-and-ai-debug-windows-plan.md).
+was written before implementation. [Checkpoint 6B.1](06g-focused-and-peripheral-vision.md)
+extends this harness with trace schema 2: consumed eye samples, private memory, attention,
+evidence references and a separately labelled host audit. Search added schema 3 and
+[olfaction](06n-olfactory-trails.md) schema 4: the consumed nose sample, private scent
+memory, scent evidence and a separate host olfaction audit.
+
+**Planned next:** [6B.1.1 dedicated senses inspectors](06j-combat-sensory-system.md)
+adds one native senses window per creature alongside these decision windows,
+plus live vision evidence. [Arena vision filters](06k-arena-sense-overlay.md) are
+now implemented as the first part of that checkpoint. The current Vision tab is
+part of the decision debugger; it does not fulfill the new separate-window
+requirement. The senses inspector shows received observations; this debugger
+shows the branches that interpreted them. Shared references and recorded timing
+must keep both views consistent without rerunning a brain.
+The dedicated senses window is for current detections only. Event logs, stack
+traces, decision trees, memory inspection and history controls stay in this
+decision debugger or the QA replay tool, rather than appearing in that window.
 
 ```sh
 make ai_debugger P1=archer P2=orc ARENA=tiny_swords_village
@@ -133,7 +148,9 @@ Do not draw a fictional vision cone before the vision sensor exists.
 Pause freezes trace playback while the battle continues. Previous/next decision and
 previous/next event reveal the recorded branches step by step; future events remain
 unrevealed until advanced. Resume returns to live history. Preserve the selected
-record if the rolling buffer advances. Load a saved JSONL segment for offline
+record if the rolling buffer advances. A pause entered before the first decision exists
+(a click on the empty history) pins the first decision when it arrives instead of
+leaving the inspector empty; the integration check drives this path for P2. Load a saved JSONL segment for offline
 inspection; playback is never presented as a resumed simulation or a live breakpoint.
 Native worker breakpoints and mutation of brain state are future debugger features.
 
@@ -181,7 +198,7 @@ Implemented files:
 
 | Area | Source |
 | --- | --- |
-| Real decision instrumentation | [`trace.odin`](../server/ai/trace.odin), [`orchestrator.odin`](../server/ai/orchestrator.odin), [`wander.odin`](../server/ai/wander.odin) |
+| Real decision instrumentation | [`trace.odin`](../server/ai/trace.odin), [`orchestrator.odin`](../server/ai/orchestrator.odin), [`observe.odin`](../server/ai/observe.odin) (replaces the original wander controller in 6B.1) |
 | Dedicated workers and host commit | [`brain_workers.odin`](../server/brain_workers.odin), [`battle.odin`](../server/battle.odin), [`main.odin`](../server/main.odin) |
 | Bounded asynchronous telemetry and world recording | [`dev_ai_debug.odin`](../server/dev_ai_debug.odin), [`dev_replay.odin`](../server/dev_replay.odin) |
 | Inspector, input validation and spatial view | [`ai_debug_window.gd`](../client/dev/ai/ai_debug_window.gd), [`trace_reader.gd`](../client/dev/ai/trace_reader.gd), [`spatial_trace.gd`](../client/dev/ai/spatial_trace.gd) |

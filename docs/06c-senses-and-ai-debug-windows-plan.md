@@ -1,39 +1,57 @@
 # MoPock roadmap: senses and separate AI debug windows
 
-Status: **vision is planned; dedicated AI threads and inspector windows are implemented in [6A.1](06d-ai-debugger-harness.md)**.
-Code review: **2026-09-10**, including the current development collision overlay changes.
+Status: **6B.1 passed [Team Lead technical re-review](06i-vision-team-lead-review.md); physical-input QA remains outstanding. 6B.1.1 is implemented: [arena vision filters](06k-arena-sense-overlay.md) and [dedicated live senses windows](06l-live-senses-windows.md); see the implementation record for verification. Dedicated decision threads and inspector windows are implemented in [6A.1](06d-ai-debugger-harness.md)**.
+Roadmap updated: **2026-09-11**. The historical baseline review below dates to **2026-09-10**.
 The existing [idle/wander checkpoint](06b-autonomous-idle-walk.md) and debugger are the starting point.
 
-The next deliverable is a creature that can report what it sees in its existing
-separate Godot AI window during development. Both creatures continue using
-their existing idle/wander behavior while we verify perception. Vision runs on the
-Odin host in the actual game; exporting private debug data and opening inspector
-windows are development features.
+The current five-sense requirements are [Combat sensory system and dedicated
+senses inspectors](06j-combat-sensory-system.md): vision, hearing, olfaction,
+tactile/terrain and pain. That document specifies the new senses-window layout,
+live evidence, vision filters, generic code naming and acceptance boundaries.
+The [delegation](delegation.md) is the current coding assignment.
+
+The original 6B.1 proposal is [focused and peripheral vision](06f-focused-and-peripheral-vision-proposal.md).
+It adds different observation payloads for the two regions, minimal expiring visual
+memory and an Observe controller that replaces random idle/walk with scanning and
+turning toward evidence. It includes the required action, content, telemetry and
+replay refactors. Vision runs on the Odin host in the actual game; exporting private
+debug data and opening inspector windows are development features.
+
+This document retains the broader senses roadmap and the original implementation
+sketch. Where its sections 2–8 describe a single cone, continued wandering, no
+initial memory or shared query/input types, **the 6B.1 requirements supersede them**.
+Sections 2–8 are historical implementation sketches, not current coding instructions.
+For present scope use the delegation, review and five-sense requirements linked above;
+internal implementation choices belong to the coding agent.
 
 This is the implementation sequence for the accepted [MoPock research direction](scratch2/planning.md).
 It refines the [AI architecture](06-character-ai-orchestration-proposal.md) and
 supersedes its earlier ordering that put some senses after combat. Keep `character`
-in existing code; MoPock is the creature's design name.
+in existing code; MoPock is conversational/design shorthand only. Code identifiers,
+APIs, schemas, modules and diagnostic roles must use generic names.
 
 ## 1. Roadmap and the first stopping point
 
 | Checkpoint | Deliverable | Evidence needed before advancing |
 | --- | --- | --- |
 | **6A — Idle/wander: implemented** | Private runtime per creature; decisions request actions through the host resolver. | Existing deterministic movement, locks, reset and audience checks. |
-| **6A.1 — Debugger: implemented** | Dedicated threads, real branch traces, bounded logs, recorded stepping and two independent native Godot windows. | [Verified harness and evidence](06d-ai-debugger-harness.md). Vision/mood/learning are explicitly unavailable in current traces. |
-| **6B.1 — Vision in the AI windows: next** | Shared sensing contracts, configurable vision, terrain occlusion and per-observer visualization. | Cone/range/occlusion checks; personal observations; actual rendered cones; debug on/off leaves simulation results identical. |
+| **6A.1 — Debugger: implemented** | Dedicated threads, real branch traces, bounded logs, recorded stepping and two independent native Godot decision windows. | [Verified harness and evidence](06d-ai-debugger-harness.md). Schema 2 adds vision; the remaining senses, moods and learning are unavailable. |
+| **6B.1 — Focused/peripheral vision: technical re-review passed** | Typed focused sightings and coarse cues, terrain occlusion, private visual memory, Observe/Face replacing random walks, existing inspector/replay integration. | [R1–R3 closed](06i-vision-team-lead-review.md) with independent regression, full-suite and graphical proof. Retain these checks; physical-input QA remains outstanding. |
+| **6B.1.1 — Dedicated senses inspectors and vision filters** | One native live senses window per creature, current focused/coarse detections and vision controls in development Filters. Traces, memory and history stay in existing decision/replay tools. | [Window, timing, replay and lifecycle acceptance](06j-combat-sensory-system.md#6-roadmap-and-acceptance); correct sample age and precision, no trace/history UI in the senses window, actual native-window proof and measured responsiveness. |
 | **6B.2 — Olfaction** | Local scent samples with strength, estimated bearing and sample age. | A source behind a wall can produce a scent only according to the scent model; readings never supply its hidden current coordinates. |
 | **6B.3 — Hearing** | Host sound events sampled with attenuation, range and bearing uncertainty. | Audible and inaudible events differ correctly; an old sound does not track its emitter. |
-| **6B.4 — Terrain/tactile sensing** | Material underfoot and confirmed contact/footing observations, with a bounded sensing footprint. | A creature knows touched ground or sensed vibration without receiving the entire terrain map. |
-| **6C — First combat ability and pain** | One shared ability, legal phases, effects and outcomes; pain as its own observation. | Hit/miss/interruption attribution works and no tactic owns a competing damage system. |
-| **6D — Memory and composable tactics** | Ageing sensory memory, two competing tactics, one intent resolver and inspectable selection reasons. | Hidden targets remain last-known estimates; switching, interruption and capability constraints work. |
+| **6B.4 — Terrain/tactile sensing** | Material and supported properties underfoot, plus confirmed direct contacts. | Extremely local evidence; no strategic rating or full terrain map. Remote ground vibration needs a separate later signal model. |
+| **6C — First combat ability and pain** | One shared ability, legal phases, effects and outcomes; private pain events/current hurt state and a pain inspector panel. | Damage is authoritative; pain adds no extra damage and reveals no hidden attacker. No detailed anatomy. |
+| **6D — Richer memory and composable tactics** | Expand 6B.1's minimal visual memory into combined sensory beliefs, competing tactics and inspectable selection reasons. | Hidden targets remain last-known estimates; switching, interruption and capability constraints work. |
 | **6E — Mood and trainer relationship** | Persistent temperament, changing mood and perceived trainer advice influence bounded tactic preferences. | The same perceived situation can yield explainable personal choices; mood cannot create knowledge or bypass action rules. |
 | **6F — Learning and persistence** | Private opponent estimates and response values update from observed results; stable pet identity saves them across matches. | Controlled learning-on/off comparisons and save/load isolation between two pets using the same character definition. |
 | **Later research experiment** | Shared neural predictor or skill selector with personal memory/parameters, if needed. | It improves a measured weakness of the simpler learner on held-out opponents and remains within the same observation/intent interfaces. |
 
-**Stop the next sensing implementation at 6B.1.** Do not scaffold empty combat, mood,
-database or training subsystems. The four initial senses share a contract and debug
-surface, but only vision produces observations in this checkpoint.
+**6B.1 is technically accepted; deliver 6B.1.1 as a separate checkpoint.** Only vision
+produces evidence in that window slice; show other sense panels as unimplemented.
+Do not scaffold empty combat, mood, database or training subsystems. Four
+environmental senses precede combat; pain is the fifth sense in the overall model
+and activates with real damage at 6C.
 
 The longer-term learning API has three distinct layers: authored abilities define
 what can execute; observed pattern estimates describe what a creature has learned
@@ -48,7 +66,7 @@ and [modular robot controllers with online skill selection](https://arxiv.org/ht
 Applying those ideas here is our design choice; the papers do not establish this
 game's performance or require neural training for its first senses.
 
-## 2. What the code review found
+## 2. What the historical code review found
 
 | Live source | Current behavior | Required preparation |
 | --- | --- | --- |
@@ -66,8 +84,9 @@ game's performance or require neural training for its first senses.
 | [Brain workers](../server/brain_workers.odin) | Each creature's dedicated thread gets copied state/context. Both are submitted before collection; no AI worker accesses the live world. | Supply private observations by value. If sensor queries run in workers, also supply copied candidate poses and immutable terrain; never query a mutating `Session`. |
 | [Battle checks](../server/battle_test.odin) | One test compares complete battle records even when one scenario moves its trainers. Tests also enforce allocation-free simulation ticks. | Separate wander determinism from perception equality: a visible trainer moving should change observations. Keep sensor sampling bounded and allocations outside the tick. |
 
-Reuse the existing two dedicated workers and fixed creature slots. No ECS conversion,
-replacement networking stack or rewrite of the wander/action split is needed. Stable
+Reuse the existing two dedicated workers and fixed creature slots. No ECS conversion
+or replacement networking stack is needed. The current proposal preserves the
+decision/action boundary while replacing the default wander controller. Stable
 player-owned pet identity is required for 6F; current windows bind to owner/round/entity.
 
 ## 3. Production perception boundary
@@ -355,8 +374,11 @@ processes without affecting unrelated Godot instances.
 
 ## 7. Implementation order for 6B.1
 
-Each step is a reviewable change with a concrete result. Vision tasks are pending;
-6A.1 already supplies the dedicated workers, trace writer, inspector and lifecycle.
+The table below is the original passive-vision sequence. Use the
+[revised implementation sequence](06f-focused-and-peripheral-vision-proposal.md#9-implementation-sequence-and-file-ownership)
+for this checkpoint, including telemetry before the Observe switch, private memory
+and the Face action. Vision tasks are pending; 6A.1 already supplies the dedicated
+workers, trace writer, inspector and lifecycle.
 
 | Step | Files/area | Result and verification |
 | --- | --- | --- |
@@ -379,13 +401,18 @@ spawns companion scenes. Include the new perception package's tests
 in the normal verification dependency chain, since testing `server/ai` alone does
 not execute tests in a separate imported package.
 
-The existing trainer-input isolation test needs two cases: with identical world
+The existing trainer-input isolation test needs separate cases: with identical world
 inputs, audience/debug attachment must leave observations and AI state identical;
-with different trainer movement, observations may differ while the unchanged wander
-controller's RNG, intent sequence and resulting creature paths remain equal. Do not
-assert equality of every private battle field across intentionally different worlds.
+changed visible trainer movement may legitimately change the Observe controller's
+decisions. Changed hidden state must leave the delivered evidence and decisions
+identical until it causes a real sensed/physical result. Do not retain the old
+assumption that every trainer movement is irrelevant to the creature's brain.
 
 ## 8. Acceptance checks
+
+This original list is supplemented and superseded where needed by the
+[focused/peripheral acceptance matrix](06f-focused-and-peripheral-vision-proposal.md#10-qa-scenarios-and-acceptance),
+especially precision limits, visual memory, turn actions and recorded replay.
 
 ### Automated correctness
 
@@ -439,8 +466,8 @@ make check_ai_debugger  # Implemented; extend its fixtures for vision.
 make check_dev
 ```
 
-`AI_DEBUG` and `check_ai_debugger` are implemented; only `check_vision` remains a
-proposed target. Existing content/client/workflow checks retain their own boundaries.
+`AI_DEBUG`, `check_ai_debugger` and `check_vision` are implemented, as is `make dev_vision`
+for the staged close-quarters QA arena. Existing content/client/workflow checks retain their own boundaries.
 
 The [6A.1 acceptance record](06d-ai-debugger-harness.md#acceptance-and-proof-status)
 contains the current 5 AI / 31 server test results and actual native-window/render
@@ -466,7 +493,14 @@ already known to movement resolution. Enrich collision feedback with contact geo
 only when the terrain checkpoint needs it. A creature with vibration sensing can
 later receive attenuated ground events; it does not inherit a full-map pathfinder.
 
-All four senses feed a later private working-memory layer. Keep observation, belief
+Pain adds a private perceived-damage observation when authoritative combat effects
+exist. It reports own hurt/severity and optional supported impact direction, not
+attacker identity, attack name or hidden position. It has no anatomical model and
+does not apply damage. Disabled pain perception does not make a creature immune.
+
+All five senses feed private memory and a later combined interpretation layer.
+Each gets a panel in the dedicated senses inspector as it becomes implemented.
+Keep observation, belief
 and learned knowledge distinct: a visible location is sampled evidence, a hidden
 last-known location is an ageing belief, and a learned attack response is an estimate
 supported by past outcomes. Each new modality gets its own payload rather than

@@ -1,0 +1,51 @@
+{
+  "schema_version": 2,
+  "profiles": [
+    {
+      "key": "starter_senses",
+      "vision": {
+        "enabled": true,
+        "range_units": 8.0,
+        "focused_fov_degrees": 60.0,
+        "overall_fov_degrees": 160.0,
+        "sample_interval_ticks": 6
+      },
+      "olfaction": {
+        "receptor": {
+          "enabled": true,
+          "range_units": 5.0,
+          "sample_interval_ticks": 12,
+          "estimates_freshness": true
+        },
+        "emitter": {
+          "enabled": true,
+          "scent_class": "human",
+          "intensity": 1.0
+        }
+      }
+    }
+  ],
+  "trainer_emitter": {
+    "enabled": true,
+    "scent_class": "human",
+    "intensity": 1.0
+  },
+  "bindings": [
+    {
+      "character": "circle",
+      "profile": "starter_senses"
+    },
+    {
+      "character": "square",
+      "profile": "starter_senses"
+    },
+    {
+      "character": "triangle",
+      "profile": "starter_senses"
+    },
+    {
+      "character": "diamond",
+      "profile": "starter_senses"
+    }
+  ]
+}

@@ -125,13 +125,13 @@ movement_normalizes_diagonals_and_blocks_terrain :: proc(t: ^testing.T) {
 
 @(test)
 movement_protocol_fixtures_and_channel_validation :: proc(t: ^testing.T) {
-    input := [15]u8{'O', 'G', 'A', 'A', 9, 10, 1, 2, 3, 4, 9, 10, 11, 12, 6}
+    input := [15]u8{'O', 'G', 'A', 'A', 11, 10, 1, 2, 3, 4, 9, 10, 11, 12, 6}
     command, valid := protocol_decode(input[:], 1)
     testing.expect(t, valid && command.round_id == 0x04030201 && command.input_sequence == 0x0c0b0a09 && command.input_mask == 6)
     _, valid = protocol_decode(input[:], 0)
     testing.expect(t, !valid)
     for length in 0..<len(input) { _, accepted := protocol_decode(input[:length], 1); testing.expect(t, !accepted) }
-    input[14] = 16
+    input[14] = 32
     _, valid = protocol_decode(input[:], 1)
     testing.expect(t, !valid)
     session := Session{phase = .In_Arena, round_id = 0x04030201, server_tick = 0x08070605, character_count = 2, summon_elapsed_ticks = 90,
@@ -139,15 +139,18 @@ movement_protocol_fixtures_and_channel_validation :: proc(t: ^testing.T) {
             {entity_id = 1, definition_id = 3, owner_id = 1, position = {144, 240}, locomotion = .Walk, facing = .East, state_start_tick = 0x08070600},
             {entity_id = 2, definition_id = 4, owner_id = 2, position = {496, 240}, facing = .West, state_start_tick = 0x07060504},
         }, trainers = {
-            {entity_id = 3, definition_id = 1, owner_id = 1, position = {112, 240}, applied_input_sequence = 0x0c0b0a09, input_mask = 6, locomotion = .Walk, facing = .North_East, state_start_tick = 0x08070600},
-            {entity_id = 4, definition_id = 1, owner_id = 2, position = {528, 240}, facing = .West, state_start_tick = 0x07060504},
+            {entity_id = 3, definition_id = 1, owner_id = 1, position = {112, 240}, applied_input_sequence = 0x0c0b0a09, input_mask = 6, locomotion = .Walk, facing = .North_East, state_start_tick = 0x08070600,
+                energy = 450, energy_recovery_ticks = 42, movement_start_tick = 0x08070600},
+            {entity_id = 4, definition_id = 1, owner_id = 2, position = {528, 240}, facing = .West, state_start_tick = 0x07060504,
+                energy = 75, run_exhausted = true, movement_start_tick = 0x07060500},
         }}
-    expected := [121]u8{79, 71, 65, 65, 9, 11, 1, 2, 3, 4, 5, 6, 7, 8, 2, 1, 0, 0, 0, 3,
+    expected := [147]u8{79, 71, 65, 65, 11, 11, 1, 2, 3, 4, 5, 6, 7, 8, 2, 1, 0, 0, 0, 3,
         0, 1, 0, 144, 0, 0, 0, 240, 0, 0, 0, 0, 0, 0, 0, 2, 0, 0, 0, 4,
         0, 2, 0, 240, 1, 0, 0, 240, 0, 0, 0, 0, 0, 0, 0, 3, 0, 0, 0, 1,
         0, 1, 0, 112, 0, 0, 0, 240, 0, 0, 9, 10, 11, 12, 6, 4, 0, 0, 0, 1,
         0, 2, 0, 16, 2, 0, 0, 240, 0, 0, 0, 0, 0, 0, 0, 90, 0, 1, 2, 0, 6, 7, 8, 0, 6, 4, 5, 6, 7,
-        1, 1, 0, 6, 7, 8, 0, 6, 4, 5, 6, 7}
+        1, 1, 0, 6, 7, 8, 0, 6, 4, 5, 6, 7, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        194, 1, 42, 0, 0, 6, 7, 8, 75, 0, 0, 1, 0, 5, 6, 7}
     testing.expect(t, protocol_encode_world(&session) == expected)
-    testing.expect(t, protocol_session_size(&session) == 138)
+    testing.expect(t, protocol_session_size(&session) == 164)
 }
