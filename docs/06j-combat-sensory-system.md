@@ -114,15 +114,16 @@ countering stealth. A strong scent does not prove its source is still present.
 Propagation, decay, blockage and any directional uncertainty must be inspectable;
 no exact hidden coordinates may be recovered from an otherwise coarse reading.
 
-#### 6B.2 olfactory trails: corrections required
+#### 6B.2 olfactory trails: technical re-review passed
 
-The owner approved this scope on **2026-09-11** and a coding-agent candidate now
+The owner approved this scope on **2026-09-11** and a coding-agent candidate
 implements it; see the [implementation record](06n-olfactory-trails.md) and the
 [coding-agent report](06o-olfaction-coding-agent-report.md). The
-[Team Lead review](06p-olfaction-team-lead-review.md) requires corrections to
-crossed-tile deposition, freshness and sampled-coverage rendering. The
-[active delegation](delegation.md) assigns these corrections. Technical and owner
-acceptance remain pending. The scope below is preserved as the contract.
+[Team Lead review](06p-olfaction-team-lead-review.md) closes the corrections to
+crossed-tile deposition, freshness and sampled-coverage rendering after independent
+regression, full-suite and graphical checks. Technical re-review passed on
+**2026-09-12**; physical-input owner acceptance remains pending. The scope below
+is preserved as the contract.
 
 - Configured emitters leave scent on ground they occupy or traverse. Deposits
   persist after departure, spread locally and dissipate with simulation time.
@@ -379,7 +380,7 @@ not current implemented combat behavior.
 | --- | --- |
 | 6B.1 technical re-review passed | Wall-boundary visibility, supported-range correctness and individual reset isolation are verified; retain the independent regressions |
 | 6B.1.1 senses inspector | Two dedicated live senses windows, current visual readings, vision filters and lifecycle/latency proof; later owner-requested exploration memory has its own tab |
-| 6B.2 olfaction, corrections required | Candidate provides trails, private noses/search and heatmaps; Team Lead R1–R3 cover missed deposits, false freshness and unknown-area rendering before acceptance |
+| 6B.2 olfaction, technical re-review passed | Trails, private noses/search and heatmaps; R1–R3 closed after independent regressions, full-suite and graphical checks. Owner physical-input acceptance remains pending |
 | 6B.3 hearing | Audible event observations, explicit uncertainty and its inspector panel |
 | 6B.4 tactile / terrain | Current ground and supported direct contacts, with its inspector panel |
 | 6C combat and pain | First authoritative combat effect and private perceived hurt feedback; visible combat tells and pain panel become active as their sources exist |
@@ -416,8 +417,9 @@ Required proof for the senses-window checkpoint:
 The [archived senses-window delegation](06l-completed-senses-delegation.md) preserves
 that checkpoint's original acceptance baseline; the subsequent owner-requested
 Exploration memory tab supersedes its prohibition on every memory panel.
-The active [delegation](delegation.md) assigns the olfaction corrections from the
-[Team Lead review](06p-olfaction-team-lead-review.md). The original candidate is
-recorded in [6B.2 olfactory trails](06n-olfactory-trails.md).
+The [delegation](delegation.md) closes the olfaction assignment after the
+[Team Lead review](06p-olfaction-team-lead-review.md) accepted its technical
+corrections. The implementation is recorded in
+[6B.2 olfactory trails](06n-olfactory-trails.md).
 Algorithms, internal APIs, file layout and refactoring technique remain the coding
 agent's responsibility. The Team Lead reviews architecture, behavior and evidence.

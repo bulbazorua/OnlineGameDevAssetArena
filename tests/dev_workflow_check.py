@@ -137,7 +137,7 @@ def main():
             assert all(read(directory / f"driver-{slot}.json")["texture_hash"] != old_texture for slot in ("p1", "p2", "audience1")), "Live terrain pixels did not refresh"
 
         # Failed resources, compile, and content validation all retain the match.
-        for path, invalid in [(visual, "invalid resource"), (sandbox / "server/movement.odin", "not valid Odin"),
+        for path, invalid in [(visual, "invalid resource"), (sandbox / "server/simulation/movement.odin", "not valid Odin"),
                               (sandbox / "client/world/game_arena.gd", "not valid GDScript"),
                               (sandbox / "client/content/data/arenas.json", "{bad json")]:
             original = path.read_text()
@@ -149,7 +149,7 @@ def main():
             time.sleep(1)
 
         # Real Odin logic edit -> fresh processes and same scenario/roles.
-        movement = sandbox / "server/movement.odin"
+        movement = sandbox / "server/simulation/movement.odin"
         source = movement.read_text()
         assert "CHARACTER_SPEED :: f32(120)" in source
         movement.write_text(source.replace("CHARACTER_SPEED :: f32(120)", "CHARACTER_SPEED :: f32(90)", 1))

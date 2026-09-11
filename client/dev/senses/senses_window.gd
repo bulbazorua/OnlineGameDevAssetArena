@@ -216,7 +216,7 @@ func _build_olfaction(parent: Node) -> void:
 	_scent.custom_minimum_size.y = 350
 	_scent.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	column.add_child(_scent)
-	var caption := _label("Wedge = sampled zone · arrow = coarse bearing · no exact trail or source is known", column, 12)
+	var caption := _label("Faint = measured, no scent · striped = partly measured · dark = not measured · wedge = scent in a measured zone · arrow = coarse bearing, never a position", column, 12)
 	caption.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	var readings_column := VBoxContainer.new()
 	readings_column.custom_minimum_size.x = 530
@@ -374,8 +374,9 @@ func _rebuild_scent_readings() -> void:
 	_scent_details.text = "Select a current scent reading for its details."
 	var nose: Dictionary = record.get("olfaction", {})
 	_scent_empty.text = "%d scent class%s detected" % [scent_readings.size(), "" if scent_readings.size() == 1 else "es"]
-	if scent_readings.is_empty(): _scent_empty.text = "Sampled: no scent within reach. Absence of smell is not proof of absence."
+	if scent_readings.is_empty(): _scent_empty.text = "Sampled: no scent on the measured ground. Absence of smell is not proof of absence."
 	if nose.get("status") != "Sampled": _scent_empty.text = "No current nose sample."
+	else: _scent_empty.text += "\n" + ScentReadings.coverage_summary(nose)
 	for row: Dictionary in scent_readings:
 		var item := _scent_table.create_item(root)
 		item.set_metadata(0, row)
@@ -466,7 +467,7 @@ func select_sense(index: int) -> void:
 	_notice.visible = index > 0 and index < MEMORY_TAB and index != OLFACTION_TAB
 	if _notice.visible: _notice.text = "%s · Not implemented\nNo readings are available for this sense yet." % PAGES[index]
 	if index == MEMORY_TAB: _footer.text = "Remembered visits only · blank = unvisited or forgotten · old entries fade or are replaced as memory fills"
-	elif index == OLFACTION_TAB: _footer.text = "Latest delivered nose sample · colours mark scent classes, never individuals · dark = not sampled · a bearing is coarse, not a position"
+	elif index == OLFACTION_TAB: _footer.text = "Latest delivered nose sample · colours mark scent classes, never individuals · dark = not measured, faint = measured with no scent · a bearing is coarse, not a position"
 	else: _footer.text = "Latest delivered sample · numbers link detections to the view · coordinates use world units"
 	_refresh_status()
 
@@ -507,6 +508,7 @@ func _write_status() -> void:
 		"status": live_status, "selected_sense": PAGES[selected_sense], "sample_key": _sample_key,
 		"record": record, "readings": readings, "metrics": metrics.summary(),
 		"olfaction_status": olfaction_status(), "scent_key": _scent_key, "scent_readings": scent_readings, "scent_metrics": scent_metrics.summary(),
+		"scent_coverage": ScentReadings.coverage_counts(record.get("olfaction", {})), "scent_legend_fits": _scent.legend_fits(),
 		"exploration_memory": _memory.debug_state(),
 		"read_us_max": _max_read_us, "update_us_max": _max_update_us}
 	var path := session_dir.path_join(slot + ".json")

@@ -104,39 +104,43 @@ OnlineGameDevAssetArena/
 │   │   ├── character_view.gd       Shape and normalized sprite-art presentation
 │   │   └── character_view.tscn
 │   └── arena.gd                    Draw colored player shapes
-├── server/                         Odin server package
-│   ├── main.odin                   Options, lifetime, and fixed 60 Hz loop
-│   ├── dev_scenario.odin           Debug-only canonical scenario and automatic entry
-│   ├── dev_scenario_test.odin      All characters/maps, countdowns, and one-shot entry
+├── server/                         Odin host executable (package main) and its packages; see docs/codebase/server-architecture.md
+│   ├── main.odin                   Options, lifetime, fixed 60 Hz loop and publication cadence
+│   ├── host_simulation.odin        One authoritative step with brain threads and diagnostics attached
+│   ├── brain_workers.odin          Two dedicated threads and copied private mailboxes
+│   ├── network.odin                ENet lifecycle, command dispatch and session updates
+│   ├── protocol.odin               Version 11 packet codec over simulation types
 │   ├── audience.odin               Shared bounded spectator history and timed release
-│   ├── audience_test.odin          Delay timing, copies, ring bounds, Welcome bytes
-│   ├── network.odin                ENet lifecycle and session updates
+│   ├── dev_scenario.odin           Debug-only canonical scenario and automatic entry
+│   ├── dev_ai_debug.odin           Bounded queue, rotating journals, atomic snapshots, decision records
+│   ├── dev_replay.odin / dev_senses.odin / dev_search.odin / dev_scent.odin  Writer-thread projections and the recording
+│   ├── *_test.odin                 Host-level tests: codec bytes, network membership, audience, workers, serial/threaded equivalence
+│   ├── content/                    Catalogs and static arenas (package content)
+│   │   ├── catalog.odin            Game_Content, load/destroy, fingerprint, character parsing
+│   │   ├── characters.odin         Character_Definition
+│   │   ├── senses.odin             senses.json validation and character bindings
+│   │   ├── arena.odin              Terrain/arena definitions, baked rules and coordinate queries
+│   │   └── *_test.odin             Invalid data, digest fixtures, map validation, connectivity and stairs
+│   ├── simulation/                 Authoritative runtime (package simulation)
+│   │   ├── simulation.odin         Simulation, begin_tick and the serial reference step advance
+│   │   ├── session.odin            Session, membership, countdown, arena entry, development entry, spawning
+│   │   ├── commands.odin           Message kinds, Client_Command, rejection reasons, session_apply
+│   │   ├── character.odin          Live Character, locomotion and facing, SIMULATION_HZ
+│   │   ├── movement.odin           Fixed-step terrain movement shared by trainers and creatures
+│   │   ├── trainers.odin           Trainer, energy and run clocks
+│   │   ├── character_actions.odin  Shared voluntary action resolver: Move, Face (turn in place) and locomotion
+│   │   ├── senses.odin             Host receptors (vision, olfaction), shared schedule gate, frozen-phase sampling and host-only audits
+│   │   ├── scent_environment.odin  Emitters, deposits and field steps for the round's shared scent field
+│   │   ├── battle.odin             Battle_Runtime, per-round/per-slot binding, prepare and resolve phases
+│   │   ├── decisions.odin          Brain_Request/Brain_Response values and the single-brain decision
+│   │   ├── dev_search_reset.odin   Host-only safe placement and fresh-round reset
+│   │   └── *_test.odin             Session, movement, trainers, sensing, battle, scent and search behavior; shared scenario builders
 │   ├── observations/types.odin     Data-only brain input contract: sightings, cues, samples, facing helpers
 │   ├── perception/                 Privileged sensing physics: sight geometry, the scent field and the nose sampler
-│   ├── ai/                         Pure per-character decisions: Observe tactic and private visual memory
-│   │   ├── observe.odin            Scan / orient / observe / reacquire from permitted evidence only
-│   │   ├── visual_memory.odin      Bounded once-only ingestion, ageing and expiry
-│   │   └── trace.odin              Optional bounded branch events with evidence references
-│   ├── senses.odin                 Host receptors (vision, olfaction), shared schedule gate, frozen-phase sampling and host-only audits
-│   ├── scent_environment.odin      Emitters, deposits and field steps for the round's shared scent field
-│   ├── content_senses.odin         senses.json validation and character bindings
-│   ├── brain_workers.odin          Two dedicated threads and copied private mailboxes
-│   ├── dev_ai_debug.odin           Bounded queue, rotating journals, atomic snapshots
-│   ├── brain_workers_test.odin     Serial equivalence, isolation, rotation and debug gates
-│   ├── simulation.odin             Public session plus private battle owner
-│   ├── battle.odin                 Receptors, agents, turn state; sampling before decisions before actions
-│   ├── character_actions.odin      Shared voluntary action resolver: Move, Face (turn in place) and locomotion
-│   ├── protocol.odin               Version 10 packet codec
-│   ├── session.odin                Membership, phase, picks, Ready, reset
-│   ├── characters.odin             Character_Definition
-│   ├── movement.odin               Live Character, countdown/spawn, fixed movement
-│   ├── movement_test.odin          Timing, input authority, collision, wire fixtures
-│   ├── content.odin                Catalog validation, lookup, fingerprint
-│   ├── content_test.odin           Invalid data and shared digest fixtures
-│   ├── arena.odin                  Terrain/arena definitions and coordinate queries
-│   ├── arena_test.odin             Map validation, selection rules and wire fixtures
-│   ├── elevation_test.odin         Connected land, height validation and stair rules
-│   └── session_test.odin           Session rules and wire-contract checks
+│   └── ai/                         Pure per-character decisions: Observe and Search tactics, private visual and scent memory
+│       ├── observe.odin            Scan / orient / observe / reacquire from permitted evidence only
+│       ├── visual_memory.odin      Bounded once-only ingestion, ageing and expiry
+│       └── trace.odin              Optional bounded branch events with evidence references
 ├── docs/
 │   ├── 00-odin-server-godot-client.md
 │   ├── 01-host-connection.md       Run and verify the first phase
@@ -195,6 +199,8 @@ OnlineGameDevAssetArena/
 │   ├── ai_trace_check.gd           Schema-2 trace validation, evidence references, legacy schema-1 decoding
 │   ├── fixtures/ai/                Genuine schema-1 snapshot/replay fixtures for legacy decoding
 │   ├── vision_review/              Team Lead vision regression checks (wall edges, accepted range, one-creature replacement)
+│   ├── olfaction_review/           Team Lead olfaction regression checks (crossed cells, detectable freshness, zero-coverage rendering)
+│   ├── olfaction_coverage/         Coding-agent coverage fixtures and the rendered coverage probe for the Olfaction page
 │   ├── replay_check.gd             Real recorded movement, synchronized seek/pause, graph and file checks
 │   ├── log_cleanup_check.py        Expiry, deletion, active/pinned/source and symlink preservation
 │   ├── land_movement_check.gd      Real host/client stair traversal and camera switches
@@ -228,9 +234,9 @@ Open **`client/project.godot`** in Godot. The `client/` directory is the Godot p
 
 ## The Odin side
 
-`server/main.odin` owns startup, network polling, and the fixed 60 Hz loop. `network.odin` handles connections and calls the rules in `session.odin`; `protocol.odin` owns packet encoding. Two fighter slots are independent of audience connections. `content.odin` validates shared character, terrain, and arena catalogs before listening. Players receive live membership/selection state; audience receives historical state through `Audience_Stream`, at the configured delay.
+`server/main.odin` owns startup, network polling, and the fixed 60 Hz loop; each step is `host_simulation_step`. `network.odin` handles connections and calls the command rules in `simulation/commands.odin`; `protocol.odin` owns packet encoding. Two fighter slots are independent of audience connections. The `content` package validates shared character, terrain, sense and arena catalogs before listening. Players receive live membership/selection state; audience receives historical state through `Audience_Stream`, at the configured delay.
 
-`movement.odin` owns runtime characters, the countdown, spawning, and authoritative collision/movement. `Simulation` owns private `Battle_Runtime` alongside the public session. `brain_workers.odin` runs each creature's AI on its own thread with copied input/state; the host applies returned intents through `character_actions.odin`. `dev_ai_debug.odin` exports optional private traces on a separate writer thread. Odin organizes packages by directory, so several `.odin` files in one package share declarations. [Odin packages](https://odin-lang.org/docs/overview/#packages)
+The `simulation` package owns the authoritative runtime: `simulation/session.odin` holds runtime characters, the countdown, spawning and trainer movement, and `Simulation` owns the private `Battle_Runtime` alongside the public session. `brain_workers.odin` runs each creature's AI on its own thread with copied input/state; the host applies returned intents through `simulation/character_actions.odin`. `dev_ai_debug.odin` exports optional private traces on a separate writer thread. Odin organizes packages by directory, so several `.odin` files in one package share declarations. [Odin packages](https://odin-lang.org/docs/overview/#packages) The owners, the tick and the thread map are in [server architecture](codebase/server-architecture.md).
 
 The server connects to clients through network messages. Its simulation code owns the accepted game state, as described in the [message-flow example](00-odin-server-godot-client.md).
 
@@ -273,6 +279,7 @@ The root `Makefile` provides the entry point for both programs:
 | `make check_scent` | Check scent trails, Olfaction pages, host heatmap, saved filters, reset and recorded olfaction |
 | `make check_vision` | Run the perception geometry, AI memory/attention, host vision suites and the independent vision review checks |
 | `make check_vision_review` | Run the Team Lead vision regression checks in normal and debug builds |
+| `make check_olfaction_review` | Run the Team Lead olfaction regressions and the coverage fixtures in normal and debug builds, then render both coverage probes (needs a display) |
 | `make check_ai_debugger` | Check real dedicated workers, bounded logs, inspector replay/lifecycle and release export gate |
 | `make replay [REPLAY=/path/to/match.replay.jsonl]` | Open recorded match QA with pause/play, seeking, speed and both AI traces |
 | `make purge_logs` | Preview logs and recordings eligible for daily cleanup; no deletion by default |
@@ -352,14 +359,15 @@ ground shadow; `CharacterView` applies the lift and positions the head marker.
 
 ## Olfactory trails additions
 
-- `server/observations/types.odin`: `Scent_Class`, `Scent_Reading`, `Scent_Sample`, `Olfaction_Profile`, `Scent_Emitter`; `Sense_Input` carries both senses with separate new-sample flags.
-- `server/perception/scent_field.odin`, `olfaction.odin`, `scent_test.odin`: the shared scent field with authored media rules, the nose sampler and their tests.
+- `server/observations/types.odin`: `Scent_Class`, `Scent_Reading`, `Scent_Sample` (with sixteen `Scent_Coverage` words), `Olfaction_Profile`, `Scent_Emitter`; `Sense_Input` carries both senses with separate new-sample flags.
+- `server/perception/scent_field.odin`, `olfaction.odin`, `scent_test.odin`: the shared scent field with authored media rules, the cell-by-cell deposit walk, the nose sampler with per-zone coverage and detectable-cell freshness, and their tests.
 - `server/scent_environment.odin`: emitters, deposits and field steps inside `Battle_Runtime`; `server/senses.odin` now holds per-sense receptors with a shared schedule gate.
 - `server/content_senses.odin` (senses schema 2), `server/arena.odin` (terrain schema 3 scent media), `client/content/sense_catalog.gd`, `arena_catalog.gd`.
 - `server/ai/scent_memory.odin`, `search_scent.odin`, `scent_memory_test.odin`: private scent memory, own-trail discounting and scent-driven search transitions.
-- `server/dev_scent.odin`: quantized field capture and `scent.json`; `dev_senses.odin` schema 3, `dev_search.odin` schema 2, trace schema 4, replay envelope 4; `server/scent_battle_test.odin`.
-- `client/dev/senses/olfaction_readings.gd`, `olfaction_sensor_view.gd`: the Olfaction page; `client/dev/scent_feed.gd`, `scent_overlay.gd`, `window_preferences.gd`: the F8 host heatmap and its saved filters.
+- `server/dev_scent.odin`: quantized field capture and `scent.json`; `dev_senses.odin` schema 4, `dev_search.odin` schema 2, trace schema 5, replay envelope 5; `server/scent_battle_test.odin`.
+- `client/dev/senses/olfaction_readings.gd`, `olfaction_sensor_view.gd`: the Olfaction page, drawing measured, partly measured and unknown ground apart; `client/dev/scent_feed.gd`, `scent_overlay.gd`, `window_preferences.gd`: the F8 host heatmap and its saved filters.
 - `client/dev/fixtures/content/scent_trail.arenas.json`, `tests/scent_check.py`, `scent_client_driver.gd`, `scent_replay_check.gd`: the scent QA arena and integration harness.
+- `tests/olfaction_review/` (Team Lead-owned), `tests/olfaction_coverage/`, `tools/measure_peak_memory.py`: independent regressions, rendered coverage probes and the six-window peak-memory measurement.
 
 See [the feature record](06n-olfactory-trails.md) and [ownership deep dive](codebase/olfaction.md).
 

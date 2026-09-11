@@ -24,7 +24,7 @@ func _initialize() -> void:
 	var reader := Reader.new()
 	check(reader.read_snapshot(fixture, snapshot.run_id, snapshot.fingerprint, int(snapshot.owner_id)), "Valid production snapshot was rejected: " + reader.error)
 	if reader.records.is_empty(): quit(1); return
-	check(int(snapshot.schema_version) == 4 and reader.records.all(func(r): return int(r.schema_version) == 4), "Production snapshot is not schema 4.")
+	check(int(snapshot.schema_version) == 5 and reader.records.all(func(r): return int(r.schema_version) == 5), "Production snapshot is not schema 5.")
 	var record: Dictionary = reader.records.back()
 	var sampled: Dictionary = record
 	for candidate in reader.records:
@@ -66,7 +66,13 @@ func _initialize() -> void:
 		func(r): r.host_audit.candidates.resize(4),
 		func(r): r.host_audit.candidates = [{"entity_id": 1, "verdict": "Seen", "distance": 1, "alignment": 1, "position": [0, 0]}],
 		func(r): r.sight_fan.resize(66),
-		func(r): r.schema_version = 5,
+		func(r): r.schema_version = 6,
+		func(r): r.input.senses.olfaction.erase("coverage"),
+		func(r): r.input.senses.olfaction.coverage.resize(15),
+		func(r): r.input.senses.olfaction.coverage[3] = "Guessed",
+		func(r): r.input.senses.olfaction.coverage[0] = "Unsampled"; r.input.senses.olfaction.readings[0] = {"observation_id": 1, "class": "Human", "strength": "Weak", "freshness": "Old", "bearing_valid": true, "bearing": "North", "zones": r.input.senses.olfaction.readings[0].zones}; r.input.senses.olfaction.readings[0].zones[0] = "Weak"; r.input.senses.olfaction.reading_count = 1,
+		func(r): r.host_scent_audit.erase("cells_excluded"),
+		func(r): r.host_scent_audit.newest_detectable_age_ticks = {"Human": 1},
 		func(r): r.input.senses.erase("olfaction"),
 		func(r): r.input.senses.olfaction.readings[0] = {"observation_id": 1, "class": "Human", "strength": "Weak", "freshness": "Old", "bearing_valid": true, "bearing": "North", "zones": r.input.senses.olfaction.readings[0].zones, "position": [1, 2]}; r.input.senses.olfaction.reading_count = 1,
 		func(r): r.input.senses.olfaction.readings[0] = {"observation_id": 1, "class": "Robot", "strength": "Weak", "freshness": "Old", "bearing_valid": true, "bearing": "North", "zones": r.input.senses.olfaction.readings[0].zones}; r.input.senses.olfaction.reading_count = 1,
@@ -87,8 +93,18 @@ func _initialize() -> void:
 	check(not Reader.validate_record(record, "different-run", snapshot.fingerprint, int(snapshot.owner_id)).is_empty(), "Cross-run record accepted.")
 	check(not Reader.validate_record(record, snapshot.run_id, snapshot.fingerprint, 3 - int(snapshot.owner_id)).is_empty(), "Other creature's record accepted.")
 	check(not reader.read_snapshot(fixture, "different-run", snapshot.fingerprint, int(snapshot.owner_id)), "Cross-run snapshot accepted.")
+	# A schema-4 record has a nose but no coverage: it stays readable and never gains a footprint.
+	var pre_coverage: Dictionary = record.duplicate(true)
+	pre_coverage.schema_version = 4
+	pre_coverage.input.senses.olfaction.erase("coverage")
+	pre_coverage.host_scent_audit.erase("cells_excluded")
+	pre_coverage.host_scent_audit.erase("newest_detectable_age_ticks")
+	check(Reader.validate_record(pre_coverage, snapshot.run_id, snapshot.fingerprint, int(snapshot.owner_id)).is_empty(), "Schema-4 record without coverage was rejected.")
+	var smuggled_coverage: Dictionary = pre_coverage.duplicate(true)
+	smuggled_coverage.input.senses.olfaction["coverage"] = record.input.senses.olfaction.coverage
+	check(not Reader.validate_record(smuggled_coverage, snapshot.run_id, snapshot.fingerprint, int(snapshot.owner_id)).is_empty(), "Schema-4 record with coverage data was accepted.")
 	# A schema-3 record has no nose: it stays readable and honest, never gaining smell.
-	var pre_olfaction: Dictionary = record.duplicate(true)
+	var pre_olfaction: Dictionary = pre_coverage.duplicate(true)
 	pre_olfaction.schema_version = 3
 	pre_olfaction.input.senses.erase("olfaction")
 	pre_olfaction.input.senses.erase("olfaction_is_new")
@@ -134,7 +150,7 @@ func _initialize() -> void:
 		var mixed: Dictionary = legacy_reader.records[0].duplicate(true)
 		mixed.schema_version = 2
 		check(not Reader.validate_record(mixed, old.run_id, old.fingerprint, int(old.owner_id)).is_empty(), "Schema-1 payload accepted as schema 2.")
-	if not failed: print("PASS: schema-4 parsing, olfaction and scent-memory validation, evidence references, hidden-field isolation, identity, ancestry, timings, journal replay, truncation, size limits, schema-3 honesty and legacy schema-1 decoding.")
+	if not failed: print("PASS: schema-5 parsing, olfaction, coverage and scent-memory validation, evidence references, hidden-field isolation, identity, ancestry, timings, journal replay, truncation, size limits, schema-4/3 honesty and legacy schema-1 decoding.")
 	quit(1 if failed else 0)
 
 

@@ -1,20 +1,22 @@
 package main
 
+import "simulation"
 import obs "observations"
 import "core:encoding/json"
 import "core:fmt"
 import "core:os"
 import "core:time"
 
-// Schema 3 adds the nose sample, its own delivery clock and the owner's emitter.
-SENSE_DEBUG_SCHEMA :: 3
+// Schema 3 added the nose sample, its own delivery clock and the owner's emitter;
+// schema 4 adds the nose's zone coverage inside that sample.
+SENSE_DEBUG_SCHEMA :: 4
 SENSE_DEBUG_BYTES :: 32 * 1024
 
 Sense_Debug_World :: struct {
     active: bool,
     round_id: u32,
     map_id: u16,
-    entities: [MAX_PLAYERS]u32,
+    entities: [simulation.MAX_PLAYERS]u32,
 }
 
 Sense_Debug_Record :: struct {
@@ -55,9 +57,9 @@ sense_debug_record :: proc(record: ^AI_Debug_Record, delivered_us, scent_deliver
     }
 }
 
-sense_debug_collect :: proc(debug: ^AI_Debug, records: ^[MAX_PLAYERS]Sense_Debug_Record) -> int {
+sense_debug_collect :: proc(debug: ^AI_Debug, records: ^[simulation.MAX_PLAYERS]Sense_Debug_Record) -> int {
     count := 0
-    for owner in 0..<MAX_PLAYERS {
+    for owner in 0..<simulation.MAX_PLAYERS {
         if !debug.sense_world.active || debug.totals[owner] == 0 { continue }
         latest := &debug.history[owner][(debug.totals[owner] - 1) % AI_DEBUG_HISTORY]
         if latest.input.round_id != debug.sense_world.round_id || latest.map_id != debug.sense_world.map_id ||
@@ -73,7 +75,7 @@ sense_debug_collect :: proc(debug: ^AI_Debug, records: ^[MAX_PLAYERS]Sense_Debug
 
 // The log writer shares only the latest readings, without copying brain history.
 ai_debug_publish_senses :: proc(debug: ^AI_Debug) {
-    records: [MAX_PLAYERS]Sense_Debug_Record
+    records: [simulation.MAX_PLAYERS]Sense_Debug_Record
     count := sense_debug_collect(debug, &records)
     snapshot := Sense_Debug_Snapshot{
         SENSE_DEBUG_SCHEMA, debug.run_id, debug.fingerprint,

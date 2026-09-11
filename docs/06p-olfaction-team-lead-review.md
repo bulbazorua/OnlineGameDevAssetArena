@@ -1,15 +1,126 @@
 # 6B.2 Team Lead review
 
-Reviewed **2026-09-11**, against the uncommitted candidate described in
-[the coding-agent report](06o-olfaction-coding-agent-report.md).
+Initial review: **2026-09-11**. Correction re-review: **2026-09-12**, against the
+finished working tree described in [the coding-agent report](06o-olfaction-coding-agent-report.md).
+The owner's `333bd1b` commit already includes the host corrections; the remaining
+candidate changes are uncommitted. Both were included in this review.
 
-**Decision: corrections required. R1–R3 remain open.** Existing suites and a
-fresh graphical scent integration pass, but independent probes reproduce two
-sensor/field errors and one rendered coverage error. This is not acceptance of
-6B.2. The [active delegation](delegation.md) assigns the corrections; the
-[original assignment](06q-olfaction-original-delegation.md) preserves the scope.
+**Current decision: 6B.2 passes Team Lead technical re-review. R1–R3 are closed.**
+The original independent probes, expanded coverage checks, full `make check` and
+fresh graphical scent, senses and debugger integrations pass. No blocking finding
+remains in the correction scope. Physical keyboard/mouse and exported-release
+acceptance were not exercised.
 
-## Findings
+[Delegation.md](delegation.md) now closes this assignment. It does not assign the
+next sense. The [original scope](06q-olfaction-original-delegation.md) and the
+historical findings below remain available for reference.
+
+## Correction disposition
+
+| Item | Re-review result |
+| --- | --- |
+| R1: crossed ground | Closed. Cell traversal assigns emission by the portion of the path inside each cell. Both original diagonal directions pass; the neighboring untouched cell stays empty. The documented edge/corner cases and 600 additional path comparisons across four tile sizes pass. |
+| R2: detectable freshness | Closed. Only independently detectable cells contribute to the reported freshness. Both classes pass near-threshold and mixed-age cases; a new sample of an old trail remains old in private memory/evidence. The undetectable control no longer rejuvenates the reading. |
+| R3: measured coverage | Closed. Sixteen coarse coverage values distinguish Unsampled, Partial and Sampled. The real control renders zero coverage as unknown, partial zones with stripes and measured absence with a faint fill. Native pages and both tested control sizes were inspected. |
+| Harness integrity | Original files in `tests/vision_review/` and `tests/olfaction_review/` match the preserved first-review copies. Their assertions were not weakened. |
+| Serialized byte ceiling | Restored. The journal check measures the actual serialized bytes across rotated segments against the declared ceiling, without the extra 1,024-byte allowance. |
+| Memory evidence | Supplied. The measurement script, both raw reports and preserved pre-olfaction tree were inspected; the sums reconcile. Qualifications are recorded below. |
+
+The host still owns the physical field and measurement logic. Workers receive
+private copied samples and memory; coverage adds no source identity, field,
+terrain map or host audit. Vision and olfaction retain independent clocks and
+the existing search/action authority. Smell does not acquire a visual target.
+
+## Independent re-review evidence
+
+Pinned evidence root:
+`build/verification/olfaction-team-lead-rereview-20260912/`.
+It includes logs, captures, source fingerprints, the previous review/assignment,
+and a check using an actual recording from the first candidate. The initial
+failure evidence remains under `olfaction-review-20260911/initial-failures/`.
+
+| Command/check run by Team Lead | Result |
+| --- | --- |
+| `make check_olfaction_review` | Exit 0: original 3 + 3 tests, added 4 + 4 coverage tests and both graphical probes |
+| `make check` | Exit 0: 42 PASS checks; includes normal perception/AI/host suites (17 / 18 / 61), debug host suite, original vision review and headless integrations |
+| `odin test server/perception -debug` | Exit 0: 17 tests |
+| `odin test server/ai -debug` | Exit 0: 18 tests |
+| `python3 tests/scent_check.py --graphical` | Exit 0: real trail and private search, both native Olfaction pages, saved settings, reset and recorded replay |
+| `python3 tests/senses_windows_check.py --graphical` | Exit 0: six native windows, coverage fixtures, latency, independent pause/close, stale states, reload and lifecycle |
+| `python3 tests/ai_debugger_check.py --graphical` | Exit 0: current schema, strict journal ceiling, decision inspection and recorded playback |
+| Actual historical replay | Exit 0: current reader decodes 1,725 frames from the first candidate's schema-4 recording; seeking retains original scent data and the display helper reports coverage not recorded |
+| Source checks | Reviewed source fingerprints remain unchanged through verification; `git diff --check` passes; inspected correction sources have no consecutive comment groups over three lines |
+
+The historical check uses the recording's own fingerprint to test decoding and
+seeking. It does not claim asset migration across different content catalogs.
+Public protocol remains 11, authored senses content remains schema 2, live senses
+diagnostics are schema 4, and decision traces/replay envelopes are schema 5.
+
+Full graphical sandboxes are pinned separately; copied captures and `SOURCE.txt`
+files under the evidence root identify their originals:
+
+- `scent-20260912-005310-98665/`: both live Olfaction pages and host field.
+- `senses-windows-20260912-005444-102608/`: native pages, minimum-size fixtures
+  and `performance.json`.
+- `ai-debugger-20260912-005621-110376/`: graphical decisions and replay.
+
+The native Orc capture shows **6 fully measured, 6 partial and 4 unknown zones**,
+including dark northern space beyond the map. The Archer independently shows
+**13 fully measured and 3 partial zones**. These are separate delivered samples,
+not projections of the other creature's knowledge.
+
+| Live page | Displays | Delivery p50 | p95 | Maximum |
+| --- | --- | --- | --- | --- |
+| Vision P1 | 80 | 45.4 ms | 111.6 ms | 112.5 ms |
+| Vision P2 | 82 | 45.3 ms | 94.5 ms | 112.7 ms |
+| Olfaction P1 | 61 | 45.4 ms | 79.4 ms | 196.0 ms |
+| Olfaction P2 | 60 | 45.3 ms | 78.8 ms | 111.7 ms |
+
+All p95 values meet the 150 ms target at normal sensor rates. Clock errors and
+host queue drops were zero. One P1 nose display took 196 ms; the target is a p95
+limit, not a guarantee for every update. Some other headless full-suite work ran
+alongside this measurement. All automated input was synthetic.
+
+## Measurement qualifications and remaining limits
+
+The coding agent's 60-second memory runs report summed process high-water marks
+of **2,525.2 MiB before olfaction** and **2,875.4 MiB with the corrected feature**.
+The two AI windows account for about 1,009.6 and 1,004.6 MiB in the latter run.
+These are sums of per-process peaks, not a simultaneous whole-machine peak;
+shared resident pages can appear in several processes. PSS is also supplied.
+This re-review audited those measurements but did not rerun the memory experiment.
+
+Both saved recordings end with `size_limit`: the corrected run saved 2,773 of
+4,164 captured frames, and the baseline saved 3,445 of 4,176. Thus the measurement
+started with recording enabled and includes time after the cap stopped saving
+frames. It should not be described as 60 seconds of continuous disk recording.
+The roughly 48-second recording limit and the debugger's large retained-history
+memory remain development-tool limits to address before growing diagnostics.
+
+One cost-table wording correction: the widest centered sample visits 16,641
+candidate cell centers, of which 11,047 are measured. The remaining 5,594 are
+3,749 outside the circle, 1,841 solid and 4 blind; none are off-map in that specific
+benchmark. Off-map coverage is tested in the edge fixtures. This corrects the
+report's description, not the algorithm or measured sample duration.
+
+Coverage remains intentionally coarse, and freshness remains one band per scent
+class. Full-field historical replay is unavailable. `make check` now needs a
+display because it includes two rendered probes; a displayless runner needs an
+appropriate graphical test environment. These disclosed limits do not reopen
+R1–R3.
+
+For owner QA, use `make dev_scent P1=archer P2=orc`, select **Olfaction** in each
+Senses window and use **F8** for the separate host field. The implementation
+record contains the blind-tracker option for isolating smell from vision.
+
+Only review/status documents and ignored verification artifacts were changed by
+the Team Lead in this re-review. Runtime code and the original review harnesses
+were not modified. Nothing was staged or committed.
+
+## Initial findings — historical, now resolved
+
+Everything below records the rejected first candidate on 2026-09-11. Its failures
+and missing measurements are historical; the disposition above is current.
 
 ### R1 — P2: short diagonal movement skips ground actually crossed
 
@@ -77,7 +188,7 @@ was measured. Preserve this meaning through live exports and recorded evidence
 without supplying the brain a world map or source locations. Merely reducing
 the range circle or relabeling all empty regions is insufficient.
 
-## Independent verification
+## Initial independent verification — historical
 
 Pinned evidence: `build/verification/olfaction-review-20260911/`.
 The `initial-failures/` subdirectory preserves the original failing logs,
@@ -122,7 +233,7 @@ failures. The next candidate needs a final full check including these regression
 guarantees. All review input was synthetic; physical input and exported release
 acceptance were not exercised.
 
-## Architecture and deviations
+## Initial architecture assessment — historical
 
 The reviewed ownership direction fits the roadmap: environmental deposits live
 on the host; independently scheduled receptors produce anonymous value samples;
@@ -148,7 +259,7 @@ The reported 46–51-second recording limit and worst-envelope field/sample cost
 are documented growth limits, not additional correctness findings. Keep them
 visible when measuring the corrected candidate; do not silently raise caps.
 
-## Review changes and handback
+## Initial review changes and handback — historical
 
 The Team Lead added `tests/olfaction_review/`, this review, the archived original
 assignment and the correction packet, and updated roadmap status. No runtime

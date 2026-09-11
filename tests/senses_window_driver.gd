@@ -117,6 +117,10 @@ func _check_olfaction_page() -> void:
 		for key in ["position", "subject", "entity_id", "kind"]: assert(not row.has(key), "Scent row leaked " + key)
 	assert(app._scent.sample.sample_id == app.record.olfaction.sample_id, "The spatial view shows another nose sample")
 	assert("reach" in app._scent_pose.text and "Nose sample #" in app._scent_timing.text)
+	var counts: Dictionary = app._scent.coverage_counts()
+	assert(counts.recorded and counts.sampled + counts.partial + counts.unsampled == 16, "The live nose sample must carry its coverage")
+	assert("Measured" in app._scent_empty.text or "No ground" in app._scent_empty.text, "The readings column must state the measured coverage")
+	assert(app._scent.legend_fits(), "The Olfaction legend overflows the view")
 	var before: String = app._scent_key
 	await create_timer(0.45).timeout
 	assert(app._scent_key != before, "The nose sample did not advance")
@@ -131,6 +135,7 @@ func _check_olfaction_page() -> void:
 	await process_frame
 	await process_frame
 	assert(app._scent_table.get_global_rect().end.x <= app.size.x, "Minimum window clips the scent table")
+	assert(app._scent.legend_fits(), "The Olfaction legend overflows the minimum window")
 	await _capture("olfaction-minimum")
 	root.size = original_size
 	app.set_scent_filter("Human", false)
@@ -262,12 +267,54 @@ func _check_olfaction_fixtures(value: Dictionary, target: Dictionary, fixture_di
 	nose.sample_id += 1
 	_publish_fixture(value, fixture_dir.path_join("senses.json"))
 	assert(app.scent_readings.is_empty() and app._scent_table.get_root().get_child_count() == 0 and "no scent" in app._scent_empty.text, "A fresh empty nose sample must clear current detection")
+	await _check_coverage_fixtures(value, nose, fixture_dir)
+	var live_coverage: Array = nose.coverage.duplicate()
+	for index in 16: nose.coverage[index] = "Unsampled"
 	nose.status = "Disabled"
 	nose.sample_id += 1
 	_publish_fixture(value, fixture_dir.path_join("senses.json"))
 	assert(app.olfaction_status() == "DISABLED" and "disabled" in app._scent_pose.text and app.live_status == "LIVE", "Disabled olfaction must be explicit and must not touch the eye's live clock")
 	nose.status = "Sampled"
+	nose.coverage = live_coverage
 	app._sense_selector.current_tab = 0
+
+
+# Coverage fixtures: a nose that measured nothing must show no measured ground, and a
+# partly measured reach must show exactly the delivered zone words.
+func _check_coverage_fixtures(value: Dictionary, nose: Dictionary, fixture_dir: String) -> void:
+	var original: Array = nose.coverage.duplicate()
+	for index in 16: nose.coverage[index] = "Unsampled"
+	nose.sample_id += 1
+	_publish_fixture(value, fixture_dir.path_join("senses.json"))
+	var counts: Dictionary = app._scent.coverage_counts()
+	assert(counts.recorded and counts.unsampled == 16 and "No ground was measured" in app._scent_empty.text, "Zero coverage must read as unknown, not as sampled absence")
+	await _capture("fixture-olfaction-no-coverage")
+	for index in 16: nose.coverage[index] = "Sampled" if index >= 6 else ("Partial" if index % 2 == 0 else "Unsampled")
+	nose.sample_id += 1
+	_publish_fixture(value, fixture_dir.path_join("senses.json"))
+	counts = app._scent.coverage_counts()
+	assert(counts.sampled == 10 and counts.partial == 3 and counts.unsampled == 3, str(counts))
+	for index in 16: assert(app._scent.zone_coverage(index) == nose.coverage[index])
+	assert("Measured 10 of 16 zones fully, 3 partly; 3 unknown." in app._scent_empty.text, app._scent_empty.text)
+	await _capture("fixture-olfaction-partial-coverage")
+	nose.coverage = original
+	# Scent claimed in a zone the nose never measured is rejected as a whole sample.
+	var broken: Dictionary = value.duplicate(true)
+	var broken_nose: Dictionary = broken.records[app.owner_id - 1].olfaction
+	for index in 16: broken_nose.coverage[index] = "Unsampled"
+	broken_nose.readings[0] = {"observation_id": 2147483665, "class": "Orc", "strength": "Weak", "freshness": "Unknown", "bearing_valid": false, "bearing": "North", "zones": broken_nose.readings[0].zones.duplicate()}
+	broken_nose.readings[0].zones[2] = "Weak"
+	broken_nose.reading_count = 1
+	broken_nose.sample_id += 5
+	broken.published_us = int(app.feed.published_us) + 1
+	var file := FileAccess.open(fixture_dir.path_join("senses.json"), FileAccess.WRITE)
+	file.store_string(JSON.stringify(broken))
+	file.close()
+	app._poll()
+	assert(app.feed.error == "Scent in an unmeasured zone." and app._scent.sample.sample_id != broken_nose.sample_id, "A reading in unmeasured ground must be refused: " + app.feed.error)
+	nose.sample_id += 1
+	_publish_fixture(value, fixture_dir.path_join("senses.json"))
+	assert(app.feed.error.is_empty())
 
 
 func _check_staleness() -> void:

@@ -227,3 +227,20 @@ own_trail_is_explained_away_while_other_same_class_scent_still_counts :: proc(t:
     agent_decide(&c, ctx, config)
     testing.expect(t, c.search.scent.valid && c.search.scent.discounted_zones == 0 && c.search.state == .Investigate)
 }
+
+@(test)
+an_old_trail_sampled_again_stays_old_in_memory_and_evidence :: proc(t: ^testing.T) {
+    a := agent_reset(3, 1, .Search, 42)
+    ctx := search_test_context(100)
+    ctx.own_emitter = {true, .Orc, 1}
+    for sample_id in u32(1)..=3 {
+        ctx.tick = 100 + (sample_id - 1) * 12
+        ctx.senses.olfaction_is_new = true
+        ctx.senses.olfaction = scent_test_input(sample_id, ctx.tick, scent_test_reading(0x80000001 + 8 * sample_id, .Human, .Medium, .North, freshness = .Old)).olfaction
+        trace: Trace_Buffer
+        scent_update_memory(&a, ctx, &trace, 0)
+        search_interpret_scent(&a, ctx, &trace, 0)
+        testing.expect(t, a.scent.count == 1 && a.scent.entries[0].freshness == .Old && a.scent.entries[0].observed_tick == ctx.tick, "re-sampling an old trail keeps the receptor's Old band")
+        testing.expect(t, a.search.scent.valid && a.search.scent.freshness == .Old && a.search.scent.observed_tick == ctx.tick)
+    }
+}

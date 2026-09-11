@@ -1,184 +1,165 @@
-# Assignment: correct the 6B.2 olfaction candidate
+# Server refactor R1: tighten the simulation API
 
-Repository: `/home/burpazor/Code/Personal/BulbaZorua/OnlineGameDevAssetArena`
+Updated **2026-09-12**. **Status: ready for coding-agent correction; not accepted.**
 
-Updated **2026-09-11**. Status: **Team Lead review requires corrections**.
-Implement R1–R3 below and complete the missing verification. This is the active
-coding assignment; return a corrected working candidate for re-review.
-
-## Roles and scope
-
-You are the **coding agent**. The owner manually sends this packet and returns
-your report to the **Team Lead**, who independently reviews and tests the work.
-Choose the algorithms, internal APIs, data structures and rendering approach.
-This packet defines behavior, ownership boundaries and acceptance evidence.
-
-The full feature is already implemented in an uncommitted working tree. Repair
-it without restarting the milestone or replacing earlier vision/search work.
-The original scope remains in [the archived assignment](06q-olfaction-original-delegation.md).
-
-Keep `docs/delegation.md`, [the Team Lead review](06p-olfaction-team-lead-review.md),
-`tests/vision_review/` and `tests/olfaction_review/` Team Lead-owned and unchanged.
-Add your own tests and integrate the review harness without weakening its
-assertions. Preserve unrelated dirty files. Do not stage or commit.
-
-Follow the instructions for your agent identity: Claude reads `CLAUDE.md` and
-must not access `AGENTS.md`; Codex reads `AGENTS.md` and must not access `CLAUDE.md`.
-Use generic creature/character/perception names in code. Comments must be simple,
-necessary and preferably one line, never more than three consecutive lines.
-Keep deeper explanations in `docs/codebase/` and split unclear operations into
-readable functions.
+This is the only active assignment. The package extraction is already
+implemented and independently reviewed. Do not restart the refactor.
+The [original assignment](server-refactor-original-delegation.md) is archived
+for its preservation rules, not as permission for more restructuring.
 
 ## Read first
 
-- [Team Lead findings and independent reproductions](06p-olfaction-team-lead-review.md).
-- [Candidate implementation](06n-olfactory-trails.md),
-  [handback report](06o-olfaction-coding-agent-report.md) and
-  [olfaction deep dive](codebase/olfaction.md).
-- [Sensory contract](06j-combat-sensory-system.md),
-  [private search](06m-naturalistic-opponent-search.md),
-  [live senses windows](06l-live-senses-windows.md) and
-  [protocol/version boundaries](protocol.md).
-- The live source around each finding and both Team Lead regression harnesses.
+- [Independent Team Lead review](server-refactor-team-lead-review.md): finding R1.
+- [Original coding-agent handback](server-refactor-coding-agent-report.md).
+- [Current server architecture](codebase/server-architecture.md).
 
-Existing perception, AI and host suites pass in both builds (14 / 17 / 60 tests),
-the unchanged vision review passes, and fresh graphical scent integration passes.
-The new independent regressions still fail. Do not treat another unchanged-suite
-pass as sufficient proof of the corrections.
+Completed independent checks found no new gameplay or multiplayer regression.
+R1 is an encapsulation correction, not a gameplay repair.
 
-## R1: every crossed tile receives its movement deposit
+## Roles and handoff
 
-The review demonstrates an ordinary short diagonal step that crosses an
-intermediate cell without depositing there, in either direction. See the exact
-positions and source location in the review.
+The owner manually passes this packet to the coding agent and returns its
+report to the Team Lead. The coding agent implements and verifies the small
+correction. The Team Lead independently reviews and tests the handback before
+acceptance. Do not mark the refactor accepted yourself.
 
-Required outcome:
+Follow the repository instructions for your agent. Codex must not access
+`CLAUDE.md`. Keep work unstaged and uncommitted. Preserve the existing dirty
+refactor, unrelated changes, historical reports, fixtures and recordings.
+Do not publish, deploy, or change Git/host configuration.
 
-- Ground actually traversed by confirmed movement receives a continuous trail
-  under a documented edge/corner convention. Include very short diagonal
-  crossings and fast trainer movement, across the accepted tile-size envelope.
-- Untouched cells do not receive movement deposits. Later diffusion remains a
-  separate environmental operation; it cannot stand in for missing deposition.
-- Keep total emission bounded and preserve stationary sources, blocked movement,
-  solid terrain, map limits, teleport/reset and simulation-time behavior.
-- Provide regression evidence beyond the literal failing example, including
-  both directions and nearby paths that should leave neighboring cells untouched.
+## R1: the specific problem
 
-Keep this responsibility in the host environmental update. No brain, renderer
-or inspector should create a substitute trail.
+The host should use the simulation's coordinating operations, not call
+individual internal steps out of order. Reviewed examples:
 
-## R2: freshness must describe the scent actually detected
+| File | Procedures to examine | Responsibility that stays inside simulation |
+| --- | --- | --- |
+| `server/simulation/trainers.odin` | `trainer_tick_energy` | Energy changes as part of trainer motion. |
+| `server/simulation/character_actions.odin` | `character_resolve_intent` | Resolution stays paired with confirmed feedback to the agent. |
+| `server/simulation/senses.odin` | `receptor_bind`, `senses_prepare` | Receptor resets and sampling stay within their owning phases. |
+| `server/simulation/scent_environment.odin` | `scent_environment_tick` | Ground scent advances at its existing point in the fixed step. |
 
-An undetectably faint fresh human trace currently changes an old detectable
-human trail from **Old** to **Very_Recent**, while detected zones, strength and
-bearing remain unchanged.
+Their reviewed production callers are inside the simulation package. These
+are audit leads, not a blind replacement list: inspect actual definitions
+and callers, including imported aliases, host adapters and tests.
 
-Required outcome:
+## Authorized correction
 
-- Estimated freshness is supported by the detectable evidence represented in
-  that reading. A below-detection trace must not independently rejuvenate it.
-- Define the behavior for mixed-age deposits, multiple zones and mixed strength
-  without identifying sources or implying their current occupancy.
-- Preserve meaningful aging, genuinely detectable recent scent, and Unknown
-  freshness for receptors that cannot estimate it. Do not hide the defect by
-  disabling freshness or changing the test's detection thresholds.
-- Check both scent classes, near-threshold cases and the downstream private
-  evidence/trace/replay path. Sampling an old trail again must not make it new.
+1. Identify the starting source and keep the R1 delta distinguishable from the
+   existing refactor. Start from the reviewed candidate, not the old clean
+   commit or pre-refactor snapshot.
+2. Audit the callable API exported by `server/simulation/`. Distinguish
+   external production callers, internal production callers, same-package
+   tests and external test fixtures.
+3. Make implementation-only helpers package-private with `@(private)`.
+   Use `@(private = "file")` only when callers, including tests, allow that
+   narrower scope. Same-package tests do not require public procedures.
+4. Keep necessary external lifecycle, phase, worker and diagnostic contracts
+   available. Do not hide every procedure merely because it has few callers.
+   Explain any helper retained solely for an external test separately from
+   the production API.
+5. Update `docs/codebase/server-architecture.md` to describe the actual public
+   operations and internal mutation paths. Distinguish procedure visibility
+   from conventions governing mutable struct fields.
 
-The receptor reports evidence; the brain continues to own its interpretation.
-Scent still cannot refresh a visual fix, identify an opponent or trigger the
-target-found marker/body hop.
+The expected code change is visibility annotations, not rewritten procedure
+bodies. Keep names, signatures, layouts, algorithms and call ordering.
+If closing R1 requires broader changes, explain the dependency and pause
+before expanding the scope.
 
-## R3: the local heatmap must be honest about what was sampled
+Do not weaken assertions, skip tests, add replacement public wrappers, or
+move helpers into a utility package to make compilation succeed. Preserve
+useful cross-package tests. Any necessary test adaptation must be minimal,
+reported explicitly, and preserve the original assertion's meaning.
 
-The review's production-generated sample measures zero cells, yet the actual
-Godot Olfaction control draws a ring labeled **sampled, no scent**. Its generic
-range circle also implies coverage beyond map limits.
+## Guardrails
 
-Required outcome:
+- No new packages or directory moves, including a diagnostics extraction.
+- No opaque-state redesign, accessor framework, per-tick hashing or replay work.
+- No gameplay tuning, unrelated bug fixes, content edits or Godot changes.
+- Preserve authority, wire bytes, fingerprints and audience timelines.
+- Preserve tick order, summon timing, sampling clocks, private memories,
+  random streams, action feedback, synchronization and allocation lifetimes.
+- Keep diagnostic capture, queues and formats unchanged.
+- Keep comments plain and at most three physical lines per block. Prefer
+  self-explanatory code; deeper explanations belong in `docs/codebase/`.
 
-- Distinguish sensor reach, actual sampled coverage, sampled absence and unknown
-  space at the nose's advertised coarse resolution. No empty reading may imply
-  that every part of the configured range was measured.
-- Correctly represent blind regions, map edges, excluded/solid areas, partial
-  zones and valid small-range/large-tile profiles. Keep aggregate zones visibly
-  coarse; do not invent a precise source trail from them.
-- Preserve the information needed for that distinction across sampling,
-  scheduled delivery, validation, live presentation and recorded evidence.
-  Respect sample/observer/round identity, stale states and separate sense clocks.
-- Keep full-field data and privileged audits outside worker inputs and the
-  creature-readings page. Do not give a creature an arena map to repair its UI.
-- Both native Olfaction pages need rendered evidence for actual coverage,
-  sampled-empty areas and unsampled areas. Include zero coverage and partial
-  coverage. Maintain readable legends at supported window sizes.
+## Verification
 
-Fixing only the visual clamp does not resolve map/zone coverage. Choose the
-smallest consistent contract that represents the real measurement. If that
-changes a schema, update its consumers deliberately and keep historical
-recordings honest about information they lack.
+Prior independent evidence is under
+`build/verification/server-refactor-20260912/independent-review/`.
+Its `candidate-source.sha256` identifies the reviewed runtime/test/tool
+source. Preserve that evidence and the original `baseline/` snapshot.
+Identify any starting-source differences; old passes do not prove R1 passes.
 
-## Preserve the architecture and accepted behavior
+Record fresh commands, exit codes and logs in a new
+`build/verification/server-refactor-20260912/r1-<timestamp>/` directory
+with a `.keep-logs` marker.
 
-Keep the common perception lifecycle: configuration, independent measurement
-schedule, private observation, brain input, diagnostic projection and recording.
-Measurement rules remain specific to each sense; private memory and search
-remain specific to each creature.
+Run from the repository root, recording each result and stopping on failure:
 
-Preserve anonymous Human/Orc blending, the Orc range advantage, independent
-emitter/receptor configuration, bounded self-trail handling, vision priority,
-private serial/worker equivalence and individual replacement behavior. Keep
-six development windows, live senses while decisions are paused, saved F6/F8
-filters, F7 clearing, exploration memory, trainer running and the corrected
-creature body hop.
+```sh
+make check_session check_ai_debugger
+make build_server
+make check
+odin build server -out:build/server-r1-release -o:speed -extra-linker-flags:"-L$(pwd)/build/deps"
+```
 
-Reading rotated journal segments, isolated `--qa-senses` content and explicit
-inert shape profiles are accepted decisions. Keep them. Do not add hearing,
-pain, advanced learning, individual scent recognition, global pathfinding or
-an unrelated framework in this correction.
+Exercise that optimized non-debug binary with the existing client checks:
 
-## Complete the verification
+```sh
+for check in connection_check selection_check arena_selection_check movement_check audience_delay_check; do
+    godot --headless --path client --script "$PWD/tests/$check.gd" -- --server="$PWD/build/server-r1-release" || exit
+done
+```
 
-1. Run the independent probes as listed in the review before and after fixing
-   the code. Preserve their failing evidence under
-   `build/verification/olfaction-review-20260911/initial-failures/`.
-   Integrate their normal/debug guarantees into a repeatable Make target and
-   the normal check path. Keep the rendered probe explicitly graphical.
-2. Extend focused tests for each correction and demonstrate that they catch the
-   original failure, then pass on the finished candidate. Preserve existing
-   privacy, schedule, lifecycle, replay and vision review guarantees.
-3. Restore a strict check of actual serialized journal bytes against the
-   advertised record ceiling across rotated segments. The new re-encoded-JSON
-   check with a 1,024-byte allowance is weaker than the original guarantee.
-   This is a harness correction; no production oversized record was observed.
-4. Supply the missing peak-memory measurement for the specified six-window,
-   recording-enabled workload. Name the processes, measurement method, duration
-   and included/excluded memory. A fixed field-size assertion is not this
-   measurement. Use a preserved baseline where practical; disclose unavailable
-   comparisons instead of presenting estimates as measurements.
-5. Rerun relevant perception/AI/host suites in normal and debug builds, the
-   headless and graphical scent/senses/debugger checks, and one final full
-   `make check` on the finished tree. Recheck payload limits and p50/p95/max
-   delivery-to-display latency if sample size or publication changes. Keep the
-   150 ms p95 target and normal production sensor rates.
+Capture each check's command, exit code and log, not just the final command
+in a sequence. Current content/simulation/host totals are 9/30/24 tests in
+normal and debug builds. Preserve those tests, not merely their counts.
 
-Use isolated QA settings. Do not alter the owner's saved debug preferences or
-authored arenas. Pin logs, captures and a replayable corrected scenario. Separate
-synthetic input, rendered inspection, measured performance and physical-input
-coverage in the report.
+Keep worker/serial equivalence, hidden-information, reset, sensing and
+diagnostic tests in their normal paths. Independent fixture counts are
+vision 3, olfaction review 3, and olfaction coverage 4. The original handback
+reversed the last two counts; use the actual counts in the R1 report.
+
+`make check` includes rendered probes and needs a display. A blocked check
+is not a pass. Report relevant failures; do not fix unrelated problems or
+soften checks silently.
+
+For visibility-only changes, do not build new benchmark/debug infrastructure.
+The previous four graphical workflow runs and performance measurements may
+remain prior-candidate evidence, clearly labeled. Do not claim they were
+rerun on R1 unless they were. Execution, data or behavior changes would require
+realignment and a broader verification plan.
+
+## Deliverables and acceptance
+
+- The small visibility correction and accurate architecture documentation.
+- `docs/server-refactor-r1-coding-agent-report.md`, marked
+  **READY FOR INDEPENDENT R1 REVIEW**, not accepted.
+- A before/after visibility table with caller evidence and reasons for any
+  retained public helper or test-only export.
+- Starting/candidate source identity, changed files, any test adaptations,
+  exact commands, exit codes, evidence paths and untested or blocked coverage.
+
+Preserve the original coding-agent report and Team Lead review as historical
+records. Link them from the R1 report rather than overwrite their results.
+A concise handback link may be added to this packet without expanding scope.
+
+The Team Lead will check that internal helpers are no longer unnecessary
+external entry points, required consumers still compile, assertions are
+preserved, and fresh regressions pass on the exact handed-back candidate.
+Only then will it recommend closing R1 and the refactor.
+
+## Separate reviewer-owned item
+
+The Team Lead's extra cross-version parity probe failed to compile. That is
+a review-harness issue, not a server failure or part of the coding agent's
+R1 task. Leave its source and evidence unchanged. Do not claim it passed or
+assign its repair to this correction. Physical-input, exported-client and
+other untested coverage remain explicit limitations until exercised.
 
 ## Handback
 
-Update `docs/06n-olfactory-trails.md`, `docs/06o-olfaction-coding-agent-report.md`
-and the relevant deep dives/protocol/workflow documents. Keep roadmap status at
-**candidate ready for Team Lead re-review** until the Team Lead accepts it.
-
-Report:
-
-- R1/R2/R3 outcomes and remaining limitations.
-- Your changed files and concise architecture/call-flow changes.
-- Exact commands, exit codes, original-failure evidence and corrected captures.
-- Measured costs, memory, payload sizes, recording duration and outstanding QA.
-- Simple owner launch/filter steps for checking the corrected trails and coverage.
-
-Leave this packet, the Team Lead review and both Team Lead harnesses unchanged.
-Leave all work uncommitted. The owner will return your report for re-review.
+Coding-agent R1 handback: [R1 coding-agent report](server-refactor-r1-coding-agent-report.md), marked READY FOR INDEPENDENT R1 REVIEW, not accepted.

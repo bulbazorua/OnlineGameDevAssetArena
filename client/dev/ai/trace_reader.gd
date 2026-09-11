@@ -1,8 +1,8 @@
 extends RefCounted
 
-# Validated development input. Schema 1 is the historical wander trace; 2 adds the
-# eye sample, memory, attention and host audit; 3 adds private search; 4 adds the
-# nose sample, scent memory and scent evidence. No schema is synthesized from another.
+# Validated development input. Schema 1: historical wander trace; 2: eye sample, memory,
+# attention, host audit; 3: private search; 4: nose sample, scent memory and evidence;
+# 5: nose zone coverage and audit excluded cells. No schema is synthesized from another.
 const MAX_SNAPSHOT_BYTES := 4 * 1024 * 1024
 const MAX_JOURNAL_BYTES := 9 * 1024 * 1024
 const HISTORY_LIMIT := 2048
@@ -12,8 +12,8 @@ const MAX_SCENT_READINGS := 2
 const SCENT_ZONES := 16
 const MAX_FAN := 65
 const SearchContract = preload("res://dev/search/search_contract.gd")
-const SCHEMAS := [1, 2, 3, 4]
-const LATEST_SCHEMA := 4
+const SCHEMAS := [1, 2, 3, 4, 5]
+const LATEST_SCHEMA := 5
 const STAGES := ["Input", "State", "Controller", "Branch", "Decision", "Outcome"]
 const STATUSES := ["Info", "Passed", "Rejected", "Skipped", "Selected", "Resolved", "Unavailable"]
 const SENSE_STATUSES := ["Unsupported", "Disabled", "Waiting_For_Summon", "Sampled"]
@@ -23,6 +23,7 @@ const EVIDENCE_KINDS := ["None", "Focused", "Cue", "Focused_Memory", "Cue_Memory
 const SCENT_CLASSES := ["Human", "Orc"]
 const SCENT_STRENGTHS := ["None", "Weak", "Medium", "Strong"]
 const SCENT_FRESHNESS := ["Unknown", "Old", "Recent", "Very_Recent"]
+const SCENT_COVERAGE := ["Unsampled", "Partial", "Sampled"]
 const SUBJECT_KINDS := ["Creature", "Trainer"]
 const LOCOMOTIONS := ["Idle", "Walk"]
 const BANDS := ["Near", "Far"]
@@ -215,7 +216,7 @@ static func validate_olfaction_profile(profile: Variant) -> bool:
 	return profile is Dictionary and profile.get("enabled") is bool and finite(profile.get("range")) and integer(profile.get("sample_interval"), 0, 4294967295) and profile.get("estimates_freshness") is bool
 
 
-static func validate_scent_sample(sample: Variant) -> String:
+static func validate_scent_sample(sample: Variant, schema := LATEST_SCHEMA) -> String:
 	if not sample is Dictionary: return "Missing nose sample."
 	for key in ["sample_id", "observer", "round_id", "sample_tick", "delivered_tick"]:
 		if not integer(sample.get(key), 0, 4294967295): return "Invalid nose sample identity."
@@ -224,6 +225,21 @@ static func validate_scent_sample(sample: Variant) -> String:
 	if not _validate_scent_readings(sample.get("readings"), sample.get("reading_count")): return "Invalid scent readings."
 	if sample.status != "Sampled" and int(sample.reading_count) > 0: return "Scent without a completed sample."
 	if sample.status == "Sampled" and (not sample.profile.enabled or sample.profile.range <= 0 or sample.profile.range > 1024): return "Invalid active olfaction range."
+	return _validate_scent_coverage(sample, schema)
+
+
+# Coverage says what the nose measured, zone by zone. It arrived with schema 5; an
+# unmeasured zone can hold no scent, and a sample that never happened measured nothing.
+static func _validate_scent_coverage(sample: Dictionary, schema: int) -> String:
+	if schema < 5: return "Coverage in a pre-coverage schema." if sample.has("coverage") else ""
+	var coverage = sample.get("coverage")
+	if not coverage is Array or coverage.size() != SCENT_ZONES: return "Missing nose coverage."
+	for zone in SCENT_ZONES:
+		if coverage[zone] not in SCENT_COVERAGE: return "Unknown nose coverage."
+		if sample.status != "Sampled" and coverage[zone] != "Unsampled": return "Coverage without a completed sample."
+	for index in int(sample.reading_count):
+		for zone in SCENT_ZONES:
+			if sample.readings[index].zones[zone] != "None" and coverage[zone] == "Unsampled": return "Scent in an unmeasured zone."
 	return ""
 
 
@@ -325,7 +341,7 @@ static func _validate_current(record: Dictionary) -> String:
 		return "Eye sample belongs to another observer or a later tick."
 	if schema >= 4:
 		if not senses.get("olfaction_is_new") is bool or not validate_emitter(input.get("own_emitter")): return "Invalid olfaction input."
-		problem = validate_scent_sample(senses.get("olfaction"))
+		problem = validate_scent_sample(senses.get("olfaction"), schema)
 		if not problem.is_empty(): return problem
 		var nose: Dictionary = senses.olfaction
 		if nose.status == "Sampled" and (nose.observer != input.entity_id or nose.round_id != input.round_id or ((int(input.tick) - int(nose.sample_tick)) & 0xffffffff) > 0x7fffffff):
@@ -355,9 +371,11 @@ static func _validate_current(record: Dictionary) -> String:
 		if not scent_audit is Dictionary or not integer(scent_audit.get("sample_id"), 0, 4294967295) or not integer(scent_audit.get("cells_sampled")) or not integer(scent_audit.get("cells_blind")):
 			return "Invalid host scent audit."
 		# Per-class values arrive keyed by class name, one entry per known class.
-		for key in ["peak", "newest_age_ticks", "coherence"]:
+		for key in ["peak", "newest_age_ticks", "coherence"] + (["newest_detectable_age_ticks"] if schema >= 5 else []):
 			var values = scent_audit.get(key)
 			if not values is Dictionary or values.keys() != SCENT_CLASSES or not values.values().all(finite): return "Invalid host scent audit values."
+		if schema >= 5 and not integer(scent_audit.get("cells_excluded")): return "Invalid host scent audit."
+		if schema < 5 and (scent_audit.has("cells_excluded") or scent_audit.has("newest_detectable_age_ticks")): return "Coverage audit in a pre-coverage schema."
 	var fan = record.get("sight_fan")
 	if not fan is Array or fan.size() > MAX_FAN: return "Invalid sight fan."
 	for point in fan:

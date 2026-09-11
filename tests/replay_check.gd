@@ -57,7 +57,7 @@ func _run() -> void:
 	var fingerprint: String = app.content.fingerprint.hex_encode()
 	if not check(reader.scan(recording, fingerprint), "Production replay rejected: " + reader.error): _finish(); return
 	check(reader.warning.is_empty(), "Gracefully closed production recording is incomplete: " + reader.warning)
-	check(int(reader.header.schema_version) == 4 and int(reader.header.trace_schema) == 4, "Production recording is not envelope/trace schema 4.")
+	check(int(reader.header.schema_version) == 5 and int(reader.header.trace_schema) == 5, "Production recording is not envelope/trace schema 5.")
 	var active := -1
 	var sampled := -1
 	var first_trainer := Vector2.INF
@@ -80,7 +80,7 @@ func _run() -> void:
 		creature_moved = creature_moved or state.characters[0].position != first_creature
 		creature_turned = creature_turned or state.characters[0].facing != first_facing
 		for record in result.frame.ai:
-			check(int(record.schema_version) == 4 and int(record.input.tick) == state.server_tick, "Recorded trace is not a schema-4 record of this frame.")
+			check(int(record.schema_version) == 5 and int(record.input.tick) == state.server_tick, "Recorded trace is not a schema-5 record of this frame.")
 			var nose: Dictionary = record.input.senses.olfaction
 			check(nose.status != "Sampled" or int(nose.sample_tick) <= state.server_tick, "Recorded nose sample is newer than its world frame.")
 			var sample: Dictionary = record.input.senses.vision

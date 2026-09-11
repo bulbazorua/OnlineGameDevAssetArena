@@ -1,5 +1,7 @@
 package main
 
+import "content"
+import "simulation"
 import ai "ai"
 import obs "observations"
 import "perception"
@@ -14,9 +16,10 @@ AI_DEBUG_QUEUE :: 256
 AI_DEBUG_HISTORY :: 80
 AI_DEBUG_LOG_BYTES :: 8 * 1024 * 1024
 AI_DEBUG_OLD_LOGS :: 3
-// Trace schema 4 also records the consumed nose sample, private scent memory,
-// the scent-driven search evidence and a separate host olfaction audit.
-AI_DEBUG_SCHEMA :: 4
+// Trace schema 4 added the consumed nose sample, private scent memory, the
+// scent-driven search evidence and a separate host olfaction audit; schema 5
+// adds the nose's zone coverage and the audit's excluded-cell and detectable-age counts.
+AI_DEBUG_SCHEMA :: 5
 // Records and recent history are bounded; oversized diagnostics are counted.
 AI_DEBUG_RECORD_LIMIT :: 48 * 1024
 
@@ -115,16 +118,16 @@ AI_Debug :: struct {
     head, count: int,
     stopping: bool,
     dropped: u64,
-    sequence: [MAX_PLAYERS]u64, // Host-only counters, including dropped records.
+    sequence: [simulation.MAX_PLAYERS]u64, // Host-only counters, including dropped records.
     directory, run_id, fingerprint: string,
     origin: time.Tick,
     origin_unix_us: i64,
     sense_world: Sense_Debug_World,
-    history: [MAX_PLAYERS][AI_DEBUG_HISTORY]AI_Debug_Record,
-    totals: [MAX_PLAYERS]u64,
-    oversized: [MAX_PLAYERS]u64,
-    files: [MAX_PLAYERS]^os.File,
-    bytes: [MAX_PLAYERS]int,
+    history: [simulation.MAX_PLAYERS][AI_DEBUG_HISTORY]AI_Debug_Record,
+    totals: [simulation.MAX_PLAYERS]u64,
+    oversized: [simulation.MAX_PLAYERS]u64,
+    files: [simulation.MAX_PLAYERS]^os.File,
+    bytes: [simulation.MAX_PLAYERS]int,
     log_limit: int,
     last_error: string,
     publish_us: i64,
@@ -132,8 +135,8 @@ AI_Debug :: struct {
     seed: u32,
     replay: Replay_Writer,
     grids: []Debug_Grid, // Writer-owned immutable opacity copies, prepared at open.
-    fans: [MAX_PLAYERS]Fan_Cache,
-    delivery: [MAX_PLAYERS]Delivery_Clocks,
+    fans: [simulation.MAX_PLAYERS]Fan_Cache,
+    delivery: [simulation.MAX_PLAYERS]Delivery_Clocks,
     scent_mutex: sync.Mutex, // Guards only the field capture handed to the writer.
     scent_capture: Scent_Debug_Capture,
     scent_captured_steps: u32,
@@ -152,7 +155,7 @@ ai_debug_options_valid :: proc(options: Options) -> bool {
     return true
 }
 
-ai_debug_open :: proc(directory, run_id: string, fingerprint: [32]u8, content: ^Game_Content = nil, log_limit: int = AI_DEBUG_LOG_BYTES, seed: u32 = 0) -> ^AI_Debug {
+ai_debug_open :: proc(directory, run_id: string, fingerprint: [32]u8, catalog: ^content.Game_Content = nil, log_limit: int = AI_DEBUG_LOG_BYTES, seed: u32 = 0) -> ^AI_Debug {
     if directory == "" { return nil }
     when !ODIN_DEBUG { return nil }
     debug := new(AI_Debug)
@@ -166,11 +169,11 @@ ai_debug_open :: proc(directory, run_id: string, fingerprint: [32]u8, content: ^
     debug.seed = seed
     debug.replay.limit = REPLAY_LIMIT_BYTES
     debug.replay.line_limit = REPLAY_LINE_LIMIT
-    if content != nil {
+    if catalog != nil {
         // Copy opacity outside the simulation tick; the writer alone reads it.
-        debug.grids = make([]Debug_Grid, len(content.arenas))
-        for &arena, index in content.arenas {
-            source := arena_opacity_grid(&arena)
+        debug.grids = make([]Debug_Grid, len(catalog.arenas))
+        for &arena, index in catalog.arenas {
+            source := content.arena_opacity_grid(&arena)
             grid := perception.Opacity_Grid{width = source.width, height = source.height, tile_size = source.tile_size, opaque = make([]bool, len(source.opaque))}
             copy(grid.opaque, source.opaque)
             debug.grids[index] = {arena.id, grid}
@@ -199,7 +202,7 @@ ai_debug_close :: proc(debug: ^AI_Debug) {
 ai_debug_enqueue :: proc(debug: ^AI_Debug, record: AI_Debug_Record) {
     if debug == nil { return }
     i := record.owner_id - 1
-    assert(i >= 0 && i < MAX_PLAYERS)
+    assert(i >= 0 && i < simulation.MAX_PLAYERS)
     debug.sequence[i] += 1
     job := AI_Debug_Job{record = record}
     job.record.sequence = debug.sequence[i]
@@ -333,7 +336,7 @@ ai_debug_publish_owner :: proc(debug: ^AI_Debug, owner: int, dropped: u64) {
 
 ai_debug_publish :: proc(debug: ^AI_Debug, dropped: u64) {
     start := time.tick_now()
-    for owner in 0..<MAX_PLAYERS { ai_debug_publish_owner(debug, owner, dropped) }
+    for owner in 0..<simulation.MAX_PLAYERS { ai_debug_publish_owner(debug, owner, dropped) }
     debug.publish_us = i64(time.tick_since(start) / time.Microsecond)
 }
 
@@ -411,9 +414,9 @@ ai_debug_writer :: proc(t: ^thread.Thread) {
         if drain.stop || time.tick_since(previous) >= 250 * time.Millisecond {
             // A fresh sample must never wait behind both history snapshots: catch up between them.
             start := time.tick_now()
-            for owner in 0..<MAX_PLAYERS {
+            for owner in 0..<simulation.MAX_PLAYERS {
                 ai_debug_publish_owner(debug, owner, drain.dropped)
-                if owner + 1 == MAX_PLAYERS { break }
+                if owner + 1 == simulation.MAX_PLAYERS { break }
                 between := ai_debug_drain(debug, false)
                 drain.dropped = between.dropped
                 if between.fresh_sample {
@@ -427,4 +430,25 @@ ai_debug_writer :: proc(t: ^thread.Thread) {
         if drain.stop { break }
     }
     for file in debug.files { if file != nil { os.close(file) } }
+}
+
+// Turn this tick's requests, answers and confirmed results into one diagnostic record
+// per creature. The confirmed outcome is appended to each trace first.
+ai_debug_record_decisions :: proc(debug: ^AI_Debug, sim: ^simulation.Simulation, requests: [simulation.MAX_PLAYERS]simulation.Brain_Request,
+                                  responses: ^[simulation.MAX_PLAYERS]simulation.Brain_Response, outcomes: [simulation.MAX_PLAYERS]simulation.Decision_Outcome) {
+    if debug == nil { return }
+    for outcome, index in outcomes {
+        request := requests[index]
+        response := &responses[index]
+        ai.trace_add(&response.trace, 1, .Outcome, .Resolved, "Host resolved intent; inspect confirmed action result",
+            "confirmed_facing", f64(outcome.result.facing), 0, outcome.result.displacement)
+        start_us := i64(time.tick_diff(debug.origin, response.started) / time.Microsecond)
+        ai_debug_enqueue(debug, AI_Debug_Record{owner_id = index + 1, definition_id = sim.session.characters[index].definition_id,
+            map_id = sim.session.map_id, facing = u8(request.ctx.facing), input = request.ctx, config = request.config,
+            before = request.agent, after = sim.battle.agents[index], decision_reason = outcome.decision_reason, result = outcome.result,
+            position_after = outcome.position_after, facing_after = outcome.facing_after,
+            audit = sim.battle.receptors[index].vision.audit, scent_audit = sim.battle.receptors[index].olfaction.audit,
+            worker_id = response.worker_id, queued_us = start_us - response.queue_us, started_us = start_us,
+            finished_us = start_us + response.compute_us, trace = response.trace})
+    }
 }

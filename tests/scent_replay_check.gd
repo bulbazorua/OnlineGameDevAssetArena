@@ -20,7 +20,7 @@ func _run() -> void:
 	assert(content.load_catalog().is_empty())
 	var reader := Reader.new()
 	assert(reader.scan(path, content.fingerprint.hex_encode()), reader.error)
-	assert(int(reader.header.schema_version) == 4 and int(reader.header.trace_schema) == 4)
+	assert(int(reader.header.schema_version) == 5 and int(reader.header.trace_schema) == 5)
 	var smelled := -1
 	var smelled_owner := 0
 	var reset_rounds := {}
@@ -32,6 +32,7 @@ func _run() -> void:
 			var nose: Dictionary = trace.input.senses.olfaction
 			assert(nose.status != "Sampled" or int(nose.sample_tick) <= int(trace.input.tick))
 			assert(nose.status != "Sampled" or int(nose.reading_count) <= 2)
+			assert(nose.coverage.size() == 16 and (nose.status == "Sampled" or nose.coverage.all(func(zone): return zone == "Unsampled")), "recorded coverage must be the nose's own footprint")
 			if nose.status == "Sampled" and int(nose.reading_count) > 0 and smelled < 0:
 				smelled = index
 				smelled_owner = int(trace.owner_id)

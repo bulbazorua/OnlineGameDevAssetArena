@@ -1,5 +1,6 @@
 extends Control
 
+const ScentReadings = preload("res://dev/senses/olfaction_readings.gd")
 const Reader = preload("res://dev/ai/trace_reader.gd")
 const Spatial = preload("res://dev/ai/spatial_trace.gd")
 const Loader = preload("res://dev/ai/trace_loader.gd")
@@ -331,7 +332,7 @@ func _render_record() -> void:
 		_metrics.text += "  ·  schema 1 wander record"
 	if int(r.get("schema_version", 1)) >= 4:
 		var nose: Dictionary = r.input.senses.olfaction
-		_metrics.text += "  ·  nose sample #%d at tick %d (%d readings, %s%s)" % [int(nose.sample_id), int(nose.sample_tick), int(nose.reading_count), nose.status, ", new" if r.input.senses.olfaction_is_new else ", retained"]
+		_metrics.text += "  ·  nose sample #%d at tick %d (%d readings, %s%s%s)" % [int(nose.sample_id), int(nose.sample_tick), int(nose.reading_count), nose.status, ", new" if r.input.senses.olfaction_is_new else ", retained", ScentReadings.coverage_note(nose)]
 	elif int(r.get("schema_version", 1)) >= 2:
 		_metrics.text += "  ·  olfaction not recorded (schema %d)" % int(r.schema_version)
 	_step_label.text = "Recorded decision #%d  ·  event %d / %d  ·  %s" % [int(r.sequence), event_cursor, r.nodes.size(), "playback frozen; battle continues" if paused else "following live host decisions"]
@@ -446,7 +447,7 @@ func _refresh_status() -> void:
 	var data: Dictionary = live_reader.snapshot
 	if int(selected.get("truncated_nodes", 0)) > 0:
 		_status.text += "  ·  WARNING: %d branch events truncated" % int(selected.truncated_nodes)
-	_footer.text = "Retained: %d decisions  ·  missed by live reader: %d  ·  host queue drops: %d  ·  oversized drops: %d  ·  writer: %s  ·  publish: %d µs\nJournals: %s/ai-%d.jsonl (+ 3 rotated segments, 8 MiB each). Vision, olfaction and private search are recorded (schema 4); hearing, mood and learning are not implemented." % [reader.records.size(), live_reader.missed_live_records, int(data.get("dropped_records", 0)), int(data.get("oversized_records", 0)), "OK" if str(data.get("writer_error", "")).is_empty() else data.writer_error, int(data.get("publish_us", 0)), trace_dir, observer_id]
+	_footer.text = "Retained: %d decisions  ·  missed by live reader: %d  ·  host queue drops: %d  ·  oversized drops: %d  ·  writer: %s  ·  publish: %d µs\nJournals: %s/ai-%d.jsonl (+ 3 rotated segments, 8 MiB each). Vision, olfaction with nose coverage and private search are recorded (schema 5); hearing, mood and learning are not implemented." % [reader.records.size(), live_reader.missed_live_records, int(data.get("dropped_records", 0)), int(data.get("oversized_records", 0)), "OK" if str(data.get("writer_error", "")).is_empty() else data.writer_error, int(data.get("publish_us", 0)), trace_dir, observer_id]
 	_footer.text += "\nQA recording: %s · %d frames · %.1f / 128 MiB · make replay" % [str(data.get("replay_status", "waiting")), int(data.get("replay_frames", 0)), float(data.get("replay_bytes", 0)) / 1048576.0]
 	_footer.text += "\nUI selection: %d µs · background read/validation: %d µs · visible rows drawn: %d" % [_selection_us, _reader_us, _timeline.drawn_rows]
 

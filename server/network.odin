@@ -1,5 +1,7 @@
 package main
 
+import "content"
+import "simulation"
 import "core:fmt"
 import "core:strings"
 import "core:time"
@@ -20,15 +22,15 @@ Client :: struct {
 Network_Host :: struct {
     host: ^enet.Host,
     clients: []Client,
-    session: ^Session,
-    content: ^Game_Content,
+    session: ^simulation.Session,
+    catalog: ^content.Game_Content,
     session_dirty: bool,
     dev_search_enabled: bool,
     audience: Audience_Stream,
     started_at: time.Tick,
 }
 
-network_open :: proc(bind: string, port: u16, session: ^Session, content: ^Game_Content, audience_delay_ms: u32 = DEFAULT_AUDIENCE_DELAY_MS) -> (Network_Host, bool) {
+network_open :: proc(bind: string, port: u16, session: ^simulation.Session, catalog: ^content.Game_Content, audience_delay_ms: u32 = DEFAULT_AUDIENCE_DELAY_MS) -> (Network_Host, bool) {
     if port == 0 {
         fmt.eprintln("[host] Port must be between 1 and 65535.")
         return {}, false
@@ -55,7 +57,7 @@ network_open :: proc(bind: string, port: u16, session: ^Session, content: ^Game_
     host.maximumWaitingData = 4096
     fmt.printfln("[host] Listening on %s:%d (2 fighters, up to %d total connections)", bind, port, MAX_CONNECTIONS)
     fmt.printfln("[host] Audience delay: %.3f seconds.", f64(audience_delay_ms) / 1000)
-    return Network_Host{host = host, clients = make([]Client, MAX_CONNECTIONS), session = session, content = content,
+    return Network_Host{host = host, clients = make([]Client, MAX_CONNECTIONS), session = session, catalog = catalog,
         audience = audience_init(audience_delay_ms), started_at = time.tick_now()}, true
 }
 
@@ -112,13 +114,13 @@ network_receive :: proc(network: ^Network_Host, client: ^Client, event: ^enet.Ev
     }
 
     if command.kind == .Hello {
-        if command.fingerprint != network.content.fingerprint {
+        if command.fingerprint != network.catalog.fingerprint {
             network_drop(network, client, u32(Reject_Reason.Content_Mismatch))
             return
         }
         joining := !client.welcomed
         if joining {
-            client.player_id = session_join(network.session, command.wants_audience)
+            client.player_id = simulation.session_join(network.session, command.wants_audience)
             // Mark membership first so a send failure rolls it back once.
             client.welcomed = true
             network.session_dirty = true
@@ -134,7 +136,7 @@ network_receive :: proc(network: ^Network_Host, client: ^Client, event: ^enet.Ev
             network_drop(network, client, u32(Reject_Reason.Protocol))
             return
         }
-        changed, rejection := session_apply(network.session, network.content, client.player_id, command, network.dev_search_enabled)
+        changed, rejection := simulation.session_apply(network.session, network.catalog, client.player_id, command, network.dev_search_enabled)
         if rejection != .None {
             round_id := network.session.round_id
             if client.player_id == 0 && network.audience.delay_ms > 0 {
@@ -145,6 +147,7 @@ network_receive :: proc(network: ^Network_Host, client: ^Client, event: ^enet.Ev
             network_send(network, client, reply[:])
         } else if changed {
             network.session_dirty = true
+            if command.kind == .Dev_Reset_Search { dev_log_search_reset(network.session) }
         } else if command.kind != .Input {
             network_send_client_session(network, client)
         }
@@ -189,7 +192,7 @@ network_drop :: proc(network: ^Network_Host, client: ^Client, reason: u32) {
 
 network_forget_client :: proc(network: ^Network_Host, client: ^Client) {
     if client.welcomed {
-        session_leave(network.session, client.player_id)
+        simulation.session_leave(network.session, client.player_id)
         network.session_dirty = true
     }
     client^ = {}

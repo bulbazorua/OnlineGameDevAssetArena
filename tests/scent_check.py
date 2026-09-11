@@ -15,7 +15,7 @@ import time
 
 from ai_debugger_check import checked, journal_records, read, wait
 from search_check import stop
-from senses_windows_check import check_bound_olfaction, native_windows
+from senses_windows_check import check_bound_olfaction, check_coverage, native_windows
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -110,6 +110,10 @@ def main() -> None:
                 assert senses(2)["record"]["vision"]["status"] == "Disabled" and senses(2)["status"] == "DISABLED", "The staged blind tracker must report disabled eyes, not an empty view"
                 assert senses(1)["record"]["vision"]["status"] == "Sampled" and senses(1)["status"] == "LIVE"
                 assert senses(2)["record"]["olfaction"]["profile"]["range"] > senses(1)["record"]["olfaction"]["profile"]["range"], "The orc nose must reach farther"
+                # The 30 x 16 arena is 512 units tall and ringed by trees: a 256-unit reach always meets unmeasurable ground.
+                orc_nose = senses(2)["record"]["olfaction"]
+                check_coverage(senses(2), orc_nose)
+                assert orc_nose["coverage"].count("Sampled") < 16 and orc_nose["coverage"].count("Sampled") > 0, orc_nose["coverage"]
                 # F6 on in both windows so the private search evidence is visible; the trail comes from P1's trainer.
                 (directory / "search-command.json").write_text(json.dumps({"sequence": 1, "slots": ["p1", "p2"]}))
                 wait(lambda: all(search(i).get("enabled") and search(i).get("readings") == 2 for i in (1, 2)), "F6 live search overlay")
@@ -119,6 +123,7 @@ def main() -> None:
                 wait(lambda: smell_reading(senses(2), "Human").get("strength") not in (None, "None"), "the orc smells generic human scent after the trainer left", 20)
                 reading = smell_reading(senses(2), "Human")
                 assert reading["observation_id"] >= 2 ** 31 and "position" not in reading, reading
+                check_coverage(senses(2), senses(2)["record"]["olfaction"])
                 (sandbox / "orc-human-reading.json").write_text(json.dumps({"reading": reading, "senses2": senses(2)["record"]["olfaction"]}, indent=2))
                 # Every orc decision is journaled, so a brief scent transition cannot be missed; a
                 # visual cue of the trainer may first spend the shared weak-evidence budget and cooldown.

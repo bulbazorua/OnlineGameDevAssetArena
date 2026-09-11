@@ -1,35 +1,21 @@
 package main
 
-import ai "ai"
+import "simulation"
 import "core:sync"
 import "core:thread"
 import "core:time"
 
-Brain_Request :: struct {
-    agent: ai.Agent,
-    ctx: ai.Decision_Context,
-    config: ai.Observe_Config,
-    trace: bool,
-    submitted: time.Tick,
-}
-Brain_Response :: struct {
-    agent: ai.Agent,
-    intent: ai.Intent,
-    trace: ai.Trace_Buffer,
-    worker_id: int,
-    queue_us, compute_us: i64,
-    started: time.Tick,
-}
 // One producer and one consumer. Semaphore handoff protects copied mailbox data.
 // Never move/copy a started worker, and never submit two outstanding requests.
 Brain_Worker :: struct {
     thread: ^thread.Thread,
     available, completed: sync.Sema,
-    request: Brain_Request,
-    response: Brain_Response,
+    request: simulation.Brain_Request,
+    submitted: time.Tick,
+    response: simulation.Brain_Response,
     stopping, busy: bool,
 }
-Brain_Workers :: struct { slots: [MAX_PLAYERS]Brain_Worker }
+Brain_Workers :: struct { slots: [simulation.MAX_PLAYERS]Brain_Worker }
 
 brain_workers_init :: proc(workers: ^Brain_Workers) {
     for &worker, i in workers.slots {
@@ -55,15 +41,23 @@ brain_workers_destroy :: proc(workers: ^Brain_Workers) {
     }
 }
 
-brain_worker_submit :: proc(worker: ^Brain_Worker, request: Brain_Request) {
+// Both threads receive their input before either is joined, so one slow brain
+// never delays the other brain's start.
+brain_workers_decide :: proc(workers: ^Brain_Workers, requests: [simulation.MAX_PLAYERS]simulation.Brain_Request) -> (responses: [simulation.MAX_PLAYERS]simulation.Brain_Response) {
+    for request, index in requests { brain_worker_submit(&workers.slots[index], request) }
+    for &worker, index in workers.slots { responses[index] = brain_worker_collect(&worker) }
+    return
+}
+
+brain_worker_submit :: proc(worker: ^Brain_Worker, request: simulation.Brain_Request) {
     assert(!worker.busy && !worker.stopping && worker.thread != nil)
     worker.request = request
-    worker.request.submitted = time.tick_now()
+    worker.submitted = time.tick_now()
     worker.busy = true
     sync.sema_post(&worker.available)
 }
 
-brain_worker_collect :: proc(worker: ^Brain_Worker) -> Brain_Response {
+brain_worker_collect :: proc(worker: ^Brain_Worker) -> simulation.Brain_Response {
     assert(worker.busy)
     sync.sema_wait(&worker.completed)
     worker.busy = false
@@ -75,17 +69,11 @@ brain_worker_run :: proc(t: ^thread.Thread) {
     for {
         sync.sema_wait(&worker.available)
         if worker.stopping { return }
-        input := worker.request
-        start := time.tick_now()
-        output := Brain_Response{agent = input.agent, worker_id = sync.current_thread_id(), started = start,
-            queue_us = i64(time.tick_diff(input.submitted, start) / time.Microsecond)}
-        trace: ^ai.Trace_Buffer
-        if input.trace { trace = &output.trace }
-        // The worker's agent/context are values: its own sample, self condition and
-        // private memory. No pointer to Session, terrain, candidates or another brain.
-        output.intent = ai.agent_decide(&output.agent, input.ctx, input.config, trace)
-        output.compute_us = i64(time.tick_since(start) / time.Microsecond)
-        worker.response = output
+        // The mailbox holds values: the brain's own copies, never a pointer to the
+        // session, the terrain, the candidates or another brain.
+        response := simulation.brain_decide(worker.request)
+        response.queue_us = i64(time.tick_diff(worker.submitted, response.started) / time.Microsecond)
+        worker.response = response
         sync.sema_post(&worker.completed)
     }
 }

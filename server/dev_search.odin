@@ -1,8 +1,10 @@
 package main
 
+import "simulation"
 import ai "ai"
 import "core:encoding/json"
 import "core:fmt"
+import "core:math"
 import "core:os"
 import "core:time"
 
@@ -27,9 +29,9 @@ Search_Debug_Snapshot :: struct {
 }
 
 ai_debug_publish_search :: proc(debug: ^AI_Debug) {
-    records: [MAX_PLAYERS]Search_Debug_Record
+    records: [simulation.MAX_PLAYERS]Search_Debug_Record
     count := 0
-    for owner in 0..<MAX_PLAYERS {
+    for owner in 0..<simulation.MAX_PLAYERS {
         if !debug.sense_world.active || debug.totals[owner] == 0 { continue }
         record := &debug.history[owner][(debug.totals[owner] - 1) % AI_DEBUG_HISTORY]
         if record.after.controller != .Search || record.input.round_id != debug.sense_world.round_id || record.map_id != debug.sense_world.map_id ||
@@ -48,4 +50,12 @@ ai_debug_publish_search :: proc(debug: ^AI_Debug) {
     temporary := fmt.aprintf("%s.tmp", path)
     defer delete(temporary)
     if os.write_entire_file(temporary, data) != nil || os.rename(temporary, path) != nil { ai_debug_error(debug, "Cannot publish search display") }
+}
+
+// The reset itself belongs to the simulation; the host only reports what it produced.
+dev_log_search_reset :: proc(session: ^simulation.Session) {
+    p1, p2 := session.characters[0].position, session.characters[1].position
+    delta := p1 - p2
+    distance := math.sqrt(delta.x * delta.x + delta.y * delta.y)
+    fmt.printfln("[dev] Search reset: round=%d, creature positions=%v / %v, separation=%.1f; fresh memories on next simulation tick.", session.round_id, p1, p2, distance)
 }

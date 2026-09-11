@@ -2,9 +2,10 @@ package vision_review
 
 import "core:testing"
 import ai "../../server/ai"
-import host "../../server"
+import content "../../server/content"
 import obs "../../server/observations"
 import sight "../../server/perception"
+import simulation "../../server/simulation"
 
 review_query :: proc(grid: sight.Opacity_Grid, from, to: obs.Vector) -> sight.Vision_Query {
     facing, _ := obs.facing_toward(from, to)
@@ -61,21 +62,21 @@ accepted_range_sees_across_an_empty_arena_with_small_tiles :: proc(t: ^testing.T
 
 @(test)
 replacing_one_creature_preserves_the_other_creatures_private_state :: proc(t: ^testing.T) {
-    content: host.Game_Content
-    if !testing.expect(t, host.content_load(&content, "client/content/data")) { return }
-    defer host.content_destroy(&content)
-    sim: host.Simulation
-    sim.session.map_id = content.arenas[0].id
+    catalog: content.Game_Content
+    if !testing.expect(t, content.load(&catalog, "client/content/data")) { return }
+    defer content.destroy(&catalog)
+    sim: simulation.Simulation
+    sim.session.map_id = catalog.arenas[0].id
     sim.session.round_id = 1
     for &player in sim.session.players {
-        player = {present = true, ready = true, character_id = content.characters[0].id}
+        player = {present = true, ready = true, character_id = catalog.characters[0].id}
     }
-    host.session_enter_arena(&sim.session, &content)
-    for _ in 0..<900 { host.simulation_tick(&sim, &content) }
+    simulation.session_enter_arena(&sim.session, &catalog)
+    for _ in 0..<900 { simulation.advance(&sim, &catalog) }
     before := sim.battle
     if !testing.expect(t, before.agents[1].memory.focused_count > 0, "The untouched creature must first gain real experience") { return }
     sim.session.characters[0].entity_id += 1000
-    host.battle_sync(&sim.battle, &sim.session, &content)
+    simulation.battle_sync(&sim.battle, &sim.session, &catalog)
     testing.expect(t, sim.battle.agents[0].entity_id == sim.session.characters[0].entity_id)
     testing.expect(t, sim.battle.agents[0].memory == ai.Visual_Memory{}, "The replacement must start without memories")
     testing.expect(t, sim.battle.agents[1] == before.agents[1], "Replacing P1 erased P2's agent state")

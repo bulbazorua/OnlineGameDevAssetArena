@@ -1,5 +1,6 @@
 package main
 
+import "simulation"
 import "core:testing"
 import "core:time"
 
@@ -8,7 +9,7 @@ audience_history_delays_copies_and_stays_bounded :: proc(t: ^testing.T) {
     stream := audience_init(DEFAULT_AUDIENCE_DELAY_MS)
     defer audience_destroy(&stream)
     capacity := len(stream.frames)
-    live: Session
+    live: simulation.Session
     // Wrap the ring several times while recording and releasing at 20 Hz.
     for sample in 0..=500 {
         live.server_tick = u32(sample)
@@ -25,7 +26,7 @@ audience_history_delays_copies_and_stays_bounded :: proc(t: ^testing.T) {
     }
     // Mutating current state, including reset, cannot change saved state.
     previous := stream.latest
-    session_reset(&live)
+    simulation.session_reset(&live)
     testing.expect(t, stream.latest == previous)
 }
 
@@ -33,7 +34,7 @@ audience_history_delays_copies_and_stays_bounded :: proc(t: ^testing.T) {
 audience_delay_uses_wall_time_and_fails_closed_during_warmup :: proc(t: ^testing.T) {
     stream := audience_init(1250)
     defer audience_destroy(&stream)
-    live := Session{round_id = 42, server_tick = 100}
+    live := simulation.Session{round_id = 42, server_tick = 100}
     testing.expect(t, !audience_advance(&stream, &live, 0))
     // A large simulated tick jump in little real time buys no earlier release.
     live.server_tick = 100000
@@ -54,7 +55,7 @@ audience_delay_uses_wall_time_and_fails_closed_during_warmup :: proc(t: ^testing
 audience_delay_zero_and_welcome_contract :: proc(t: ^testing.T) {
     stream := audience_init(0)
     defer audience_destroy(&stream)
-    live: Session
+    live: simulation.Session
     testing.expect(t, !audience_advance(&stream, &live, 60 * time.Second))
     testing.expect(t, len(stream.frames) == 0 && !stream.has_latest)
     testing.expect(t, protocol_encode_welcome(0, 5000) == [11]u8{'O', 'G', 'A', 'A', 11, 2, 0, 136, 19, 0, 0})

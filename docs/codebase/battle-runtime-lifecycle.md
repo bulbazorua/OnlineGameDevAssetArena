@@ -1,9 +1,9 @@
 # Battle runtime lifecycle: per-round versus per-creature state
 
-Code: [`server/battle.odin`](../../server/battle.odin) (`battle_sync`,
-`battle_bind_creature`), [`server/senses.odin`](../../server/senses.odin)
+Code: [`server/simulation/battle.odin`](../../server/simulation/battle.odin) (`battle_sync`,
+`battle_bind_creature`), [`server/simulation/senses.odin`](../../server/simulation/senses.odin)
 (`receptor_bind`), [`server/ai/orchestrator.odin`](../../server/ai/orchestrator.odin)
-(`agent_reset`). Behavior record:
+(`agent_reset`). Package map: [server architecture](server-architecture.md). Behavior record:
 [6B.1 focused and peripheral vision](../06g-focused-and-peripheral-vision.md).
 
 ## What lives where
@@ -18,7 +18,8 @@ audience history or wire packets. It holds two kinds of state:
 
 ## How `battle_sync` decides
 
-`simulation_tick` calls `battle_sync` once per tick before any sensing or decision.
+`simulation.begin_tick`, shared by the serial `simulation.advance` and the host's
+`host_simulation_step`, calls `battle_sync` once per tick before any sensing or decision.
 
 1. Not in the arena: the whole runtime is zeroed. Nothing private survives a return to
    the lobby.

@@ -87,7 +87,7 @@ func _command() -> void:
 	await _capture("tree")
 	var tabs: TabContainer = app._spatial.get_parent()
 	tabs.current_tab = 3
-	assert(app._vision.record == record and int(record.schema_version) == 4)
+	assert(app._vision.record == record and int(record.schema_version) == 5)
 	# Stepping never reveals memory changes before their node.
 	app.restart_decision()
 	app.step_event(1)

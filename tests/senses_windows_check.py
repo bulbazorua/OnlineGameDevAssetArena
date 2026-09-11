@@ -79,6 +79,19 @@ def check_bound_olfaction(state: dict, record: dict, records: list[dict]) -> Non
     first = next(r for r in records if r["input"]["senses"]["olfaction"]["sample_id"] == nose["sample_id"])
     assert first["input"]["senses"]["olfaction_is_new"] and record["scent_delivered_us"] == first["queued_us"]
     assert record["own_emitter"]["class"] in ("Human", "Orc")
+    check_coverage(state, nose)
+
+
+def check_coverage(state: dict, nose: dict) -> None:
+    """Coverage is the nose's own footprint: sixteen zone words, scent only on measured ground, shown as counted."""
+    coverage = nose["coverage"]
+    assert len(coverage) == 16 and set(coverage) <= {"Unsampled", "Partial", "Sampled"}, coverage
+    for reading in nose["readings"][:int(nose["reading_count"])]:
+        for zone, band in enumerate(reading["zones"]):
+            assert band == "None" or coverage[zone] != "Unsampled", (zone, band, coverage)
+    shown = state["scent_coverage"]
+    assert shown["recorded"] and shown["sampled"] == coverage.count("Sampled") and shown["partial"] == coverage.count("Partial") and shown["unsampled"] == coverage.count("Unsampled"), (shown, coverage)
+    assert state["scent_legend_fits"], "the Olfaction legend overflows its view"
 
 
 def native_windows(sandbox: Path, session: dict) -> dict[int, str]:

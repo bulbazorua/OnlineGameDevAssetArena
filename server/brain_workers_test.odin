@@ -1,5 +1,7 @@
 package main
 
+import "content"
+import "simulation"
 import ai "ai"
 import obs "observations"
 import "perception"
@@ -14,9 +16,9 @@ import "core:time"
 
 @(test)
 dedicated_brains_match_serial_simulation_and_use_distinct_threads :: proc(t: ^testing.T) {
-    content: Game_Content
-    testing.expect(t, content_load(&content, "client/content/data"))
-    defer content_destroy(&content)
+    catalog: content.Game_Content
+    testing.expect(t, content.load(&catalog, "client/content/data"))
+    defer content.destroy(&catalog)
     workers := new(Brain_Workers)
     defer free(workers)
     brain_workers_init(workers)
@@ -25,26 +27,26 @@ dedicated_brains_match_serial_simulation_and_use_distinct_threads :: proc(t: ^te
     debug := new(AI_Debug)
     defer free(debug)
     debug.origin = time.tick_now()
-    for &arena in content.arenas {
-        a := battle_test_scenario(&content, arena.id, 5, 71)
+    for &arena in catalog.arenas {
+        a := simulation.battle_test_scenario(&catalog, arena.id, 5, 71)
         b := a
         for tick in u32(1)..<700 {
             if tick % 3 == 0 {
-                command := Client_Command{kind = .Input, round_id = a.session.round_id, input_sequence = tick, input_mask = 2}
-                session_apply(&a.session, &content, 1, command)
-                session_apply(&b.session, &content, 1, command)
+                command := simulation.Client_Command{kind = .Input, round_id = a.session.round_id, input_sequence = tick, input_mask = 2}
+                simulation.session_apply(&a.session, &catalog, 1, command)
+                simulation.session_apply(&b.session, &catalog, 1, command)
             }
-            simulation_tick(&a, &content)
-            simulation_tick(&b, &content, workers, debug)
+            simulation.advance(&a, &catalog)
+            host_simulation_step(&b, &catalog, workers, debug)
             testing.expect(t, a.session == b.session && a.battle == b.battle)
         }
         id1, id2 := workers.slots[0].response.worker_id, workers.slots[1].response.worker_id
         testing.expect(t, id1 != id2 && id1 != sync.current_thread_id() && id2 != sync.current_thread_id())
-        session_reset(&a.session)
-        session_reset(&b.session)
-        simulation_tick(&a, &content)
-        simulation_tick(&b, &content, workers, debug)
-        testing.expect(t, a.battle == Battle_Runtime{} && b.battle == Battle_Runtime{})
+        simulation.session_reset(&a.session)
+        simulation.session_reset(&b.session)
+        simulation.advance(&a, &catalog)
+        host_simulation_step(&b, &catalog, workers, debug)
+        testing.expect(t, a.battle == simulation.Battle_Runtime{} && b.battle == simulation.Battle_Runtime{})
     }
     testing.expect(t, debug.count == AI_DEBUG_QUEUE && debug.dropped > 0)
 }
@@ -72,20 +74,20 @@ debug_journals_rotate_and_shutdown_publishes_complete_history :: proc(t: ^testin
         testing.expect(t, ai_debug_open("/tmp/unused-ai-test", "test", {}) == nil)
         return
     }
-    content: Game_Content
-    testing.expect(t, content_load(&content, "client/content/data"))
-    defer content_destroy(&content)
+    catalog: content.Game_Content
+    testing.expect(t, content.load(&catalog, "client/content/data"))
+    defer content.destroy(&catalog)
     directory := fmt.aprintf("build/ai-debug-test-%d", sync.current_thread_id())
     defer delete(directory)
     testing.expect(t, os.make_directory(directory) == nil)
-    debug := ai_debug_open(directory, "test-run", content.fingerprint, &content, 4096, seed = 42)
-    sim := battle_test_scenario(&content, 1, 5)
+    debug := ai_debug_open(directory, "test-run", catalog.fingerprint, &catalog, 4096, seed = 42)
+    sim := simulation.battle_test_scenario(&catalog, 1, 5)
     sim.session.summon_elapsed_ticks = 90
     packets: [60][164]u8
     origin := sim.session.trainers[0].position
     for i in 0..<60 {
-        session_apply(&sim.session, &content, 1, {kind = .Input, round_id = sim.session.round_id, input_sequence = u32(i + 1), input_mask = 2})
-        simulation_tick(&sim, &content, nil, debug)
+        simulation.session_apply(&sim.session, &catalog, 1, {kind = .Input, round_id = sim.session.round_id, input_sequence = u32(i + 1), input_mask = 2})
+        host_simulation_step(&sim, &catalog, nil, debug)
         packets[i] = protocol_encode_session(&sim.session)
     }
     testing.expect(t, sim.session.trainers[0].position != origin)
@@ -177,6 +179,7 @@ extreme_record :: proc(absurd_floats: bool) -> AI_Debug_Record {
         reading = {observation_id = 0xffffffff, class = .Orc, strength = .Medium, freshness = .Very_Recent, bearing_valid = true, bearing = .North_West}
         for &zone in reading.zones { zone = .Medium }
     }
+    for &zone in nose.coverage { zone = .Unsampled }
     record.input.senses.olfaction_is_new = true
     record.input = {entity_id = 0xffffffff, round_id = 0xffffffff, tick = 0xffffffff, position = point, facing = .North_West, can_act = true, turn_ready = true,
         senses = record.input.senses, own_emitter = {true, .Human, wide}}
@@ -212,8 +215,11 @@ extreme_record :: proc(absurd_floats: bool) -> AI_Debug_Record {
     record.config = {{0xffffffff, 0xffffffff}, 0xffffffff, 0x7fffffffffffffff}
     record.audit = {sample_id = 0xffffffff, origin_opaque = true, candidate_count = 3, sight_tests = 0x7fffffff, merged_cues = 0x7fffffff}
     for &entry in record.audit.candidates { entry = {0xffffffff, .Outside_Field, wide, wide, point} }
-    record.scent_audit = {sample_id = 0xffffffff, cells_sampled = 0x7fffffff, cells_blind = 0x7fffffff}
-    for class in obs.Scent_Class { record.scent_audit.peak[class], record.scent_audit.newest_age_ticks[class], record.scent_audit.coherence[class] = wide, 0xffffffff, wide }
+    record.scent_audit = {sample_id = 0xffffffff, cells_sampled = 0x7fffffff, cells_blind = 0x7fffffff, cells_excluded = 0x7fffffff}
+    for class in obs.Scent_Class {
+        record.scent_audit.peak[class], record.scent_audit.newest_age_ticks[class], record.scent_audit.coherence[class] = wide, 0xffffffff, wide
+        record.scent_audit.newest_detectable_age_ticks[class] = 0xffffffff
+    }
     record.fan_count = perception.FAN_RAYS
     for &point_out in record.fan { point_out = point }
     longest := "Select attention: nearest band, smallest turn, clockwise tie"
@@ -239,7 +245,7 @@ worst_case_record_fits_the_declared_ceilings :: proc(t: ^testing.T) {
     testing.expect(t, error == nil && len(data) <= AI_DEBUG_RECORD_LIMIT, "worst-case record exceeds the per-record ceiling")
     testing.expect(t, AI_DEBUG_HISTORY * AI_DEBUG_RECORD_LIMIT + 64 * 1024 < 4 * 1024 * 1024, "a full snapshot could exceed the reader cap")
     testing.expect(t, 2 * AI_DEBUG_RECORD_LIMIT + 4096 < REPLAY_LINE_LIMIT && REPLAY_LINE_LIMIT < 128 * 1024)
-    fmt.printfln("[AI debugger] Worst-case schema-4 record: %d bytes of %d", len(data), AI_DEBUG_RECORD_LIMIT)
+    fmt.printfln("[AI debugger] Worst-case schema-%d record: %d bytes of %d", AI_DEBUG_SCHEMA, len(data), AI_DEBUG_RECORD_LIMIT)
 }
 
 @(test)
@@ -262,7 +268,7 @@ oversized_diagnostics_are_dropped_and_counted_without_touching_gameplay :: proc(
     ai_debug_log(debug, &normal)
     testing.expect(t, debug.oversized[1] == 1 && os.exists(journal))
     // A replay frame keeps its world packet and drops only the oversized traces.
-    session: Session
+    session: simulation.Session
     session.server_tick, session.round_id = 5, 1
     bloated.input.tick, bloated.input.round_id = 5, 1
     bloated.owner_id = 1

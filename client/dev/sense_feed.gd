@@ -44,7 +44,7 @@ func is_stale() -> bool:
 
 
 static func validate(value: Variant, run_id: String, fingerprint: String) -> String:
-	if not value is Dictionary or value.get("schema_version") != 3 or value.size() != 7:
+	if not value is Dictionary or value.get("schema_version") != 4 or value.size() != 7:
 		return "Unsupported sense snapshot"
 	if value.get("run_id") != run_id or value.get("fingerprint") != fingerprint:
 		return "Senses belong to another run or content version"

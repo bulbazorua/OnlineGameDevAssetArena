@@ -2,9 +2,10 @@
 
 See [the feature record](../06m-naturalistic-opponent-search.md) for player-facing behavior, tuning and QA.
 
-`simulation_tick` binds one `Battle_Runtime` per round and one private agent per creature. The scenario seed, round and entity initialize a separate random stream in `agent_reset`. Default simulations select `Search`; the explicit development/test Observe mode preserves the stationary visual receptor regressions.
+`simulation.begin_tick` binds one `Battle_Runtime` per round and one private agent per creature
+([package map](server-architecture.md)). The scenario seed, round and entity initialize a separate random stream in `agent_reset`. Default simulations select `Search`; the explicit development/test Observe mode preserves the stationary visual receptor regressions.
 
-`senses_prepare` samples the frozen pre-action world separately for each observer. `battle_tick` constructs a `Decision_Context` with self condition and that observer's `Sense_Input`. The host hands a by-value `Agent`, context and configuration to each dedicated worker. `server/ai` imports the data-only observations contract and cannot access host map/session objects.
+`senses_prepare` samples the frozen pre-action world separately for each observer. `battle_prepare_decisions` constructs a `Decision_Context` with self condition and that observer's `Sense_Input` and packs it with a copied `Agent` and configuration into a `Brain_Request`; the host hands one request to each dedicated worker, and `battle_resolve_decisions` applies the answers in slot order. `server/ai` imports the data-only observations contract and cannot access host map/session objects.
 
 `agent_decide` routes to `search_decide`. Its phases are deliberately separate:
 
@@ -39,8 +40,8 @@ Acquisition becomes a minimal public presentation signal: a flag and original si
 
 ## Development search reset
 
-`search_reset_control.gd` sends a reliable `Dev_Reset_Search` command with the expected round, never client-selected coordinates. `session_apply` checks the welcomed player and round. `dev_search_reset` additionally requires a debug build, a local development host with the Search controller, and completed summoning. Concurrent old-round clicks cannot reset the new round again.
+`search_reset_control.gd` sends a reliable `Dev_Reset_Search` command with the expected round, never client-selected coordinates. `session_apply` checks the welcomed player and round. `dev_search_reset` (in the simulation package) additionally requires a debug build, a local development host with the Search controller, and completed summoning. Concurrent old-round clicks cannot reset the new round again.
 
 `dev_search_reset_placements` computes safe spawn pairs before mutating anything. A bounded host-only flood fill checks connected ground with the larger required footprint, including elevation transitions; a farthest-point sweep chooses separated creature/trainer groups. This operation creates no path for a creature and shares no world knowledge with its brain. A failed placement leaves the session untouched.
 
-Successful reset reuses `session_enter_arena` for fresh entity IDs and clean action/presentation state, then installs the validated positions. The new round makes `battle_sync` rebuild both private brains and receptors before their next decision. Existing round handling clears client prediction and old live readings; recorded replay retains the old and new rounds. The host logs the reset round, creature positions and separation. Saved display preferences and native windows are independent of this lifecycle.
+Successful reset reuses `session_enter_arena` for fresh entity IDs and clean action/presentation state, then installs the validated positions. The new round makes `battle_sync` rebuild both private brains and receptors before their next decision. Existing round handling clears client prediction and old live readings; recorded replay retains the old and new rounds. The host, not the simulation, logs the reset round, creature positions and separation (`dev_log_search_reset` after `session_apply`). Saved display preferences and native windows are independent of this lifecycle.

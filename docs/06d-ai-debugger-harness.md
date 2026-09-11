@@ -5,7 +5,8 @@ was written before implementation. [Checkpoint 6B.1](06g-focused-and-peripheral-
 extends this harness with trace schema 2: consumed eye samples, private memory, attention,
 evidence references and a separately labelled host audit. Search added schema 3 and
 [olfaction](06n-olfactory-trails.md) schema 4: the consumed nose sample, private scent
-memory, scent evidence and a separate host olfaction audit.
+memory, scent evidence and a separate host olfaction audit. Schema 5 adds the nose's
+sixteen zone-coverage words and the audit's excluded-cell and detectable-age counts.
 
 **Planned next:** [6B.1.1 dedicated senses inspectors](06j-combat-sensory-system.md)
 adds one native senses window per creature alongside these decision windows,

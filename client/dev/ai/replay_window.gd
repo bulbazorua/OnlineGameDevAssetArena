@@ -1,5 +1,6 @@
 extends Control
 
+const ScentReadings = preload("res://dev/senses/olfaction_readings.gd")
 const Store = preload("res://dev/ai/replay_store.gd")
 const Stage = preload("res://dev/ai/replay_stage.gd")
 const Graph = preload("res://dev/ai/decision_graph.gd")
@@ -280,7 +281,7 @@ func _render_trace() -> void:
 		sample_text = " · schema 1 wander record"
 	if int(trace.get("schema_version", 1)) >= 4:
 		var nose: Dictionary = trace.input.senses.olfaction
-		sample_text += " · nose sample #%d at tick %d (%d readings, %s)" % [int(nose.sample_id), int(nose.sample_tick), int(nose.reading_count), nose.status]
+		sample_text += " · nose sample #%d at tick %d (%d readings, %s%s)" % [int(nose.sample_id), int(nose.sample_tick), int(nose.reading_count), nose.status, ScentReadings.coverage_note(nose)]
 	elif int(trace.get("schema_version", 1)) >= 2:
 		sample_text += " · olfaction not recorded in this schema"
 	_trace_labels[owner - 1].text = "P%d · entity %d · tick %d · %s → %s · event %d / %d%s" % [owner, int(trace.input.entity_id), int(trace.input.tick), trace.decision_reason, trace.result.kind, cursor, trace.nodes.size(), sample_text]

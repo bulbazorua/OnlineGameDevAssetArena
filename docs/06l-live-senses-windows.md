@@ -52,8 +52,10 @@ window. Pausing a decision
 debugger does not pause the senses window.
 
 **Olfaction** is now a live page: the delivered nose sample drawn as sixteen
-sampled zones per scent class, with strength, freshness and a coarse bearing on
-its own delivery clock; see [olfactory trails](06n-olfactory-trails.md).
+zones per scent class, with strength, freshness and a coarse bearing on its own
+delivery clock. Each zone shows what the nose measured there: faint for measured
+ground without scent, striped for partly measured ground, dark for unknown ground;
+see [olfactory trails](06n-olfactory-trails.md).
 Hearing, Tactile / terrain and Pain each have a selector with an honest
 **Not implemented** message. Projectiles, hazards and combat states remain later
 features. Their future adapters must supply typed, permitted observations under

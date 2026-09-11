@@ -1,8 +1,11 @@
 # Checkpoint 6B.2: olfactory trails, private sensing and live heatmaps
 
-Implemented **2026-09-11** from the [active assignment](delegation.md) and the
-[combat sensory contract](06j-combat-sensory-system.md). Status: **coding-agent
-candidate, not yet Team Lead-reviewed or owner-accepted.** The
+Implemented **2026-09-11** from the [original assignment](06q-olfaction-original-delegation.md)
+and the [combat sensory contract](06j-combat-sensory-system.md); corrected on
+**2026-09-12** for the [Team Lead review](06p-olfaction-team-lead-review.md)
+findings R1–R3. The [delegation](delegation.md) is now closed. Status:
+**Team Lead technical re-review passed on 2026-09-12; owner physical-input
+acceptance remains pending.** The
 [coding-agent report](06o-olfaction-coding-agent-report.md) lists changed files,
 commands, measurements and evidence; the [deep dive](codebase/olfaction.md)
 explains ownership and flow.
@@ -11,7 +14,8 @@ explains ownership and flow.
 make dev_scent P1=archer P2=orc            # wide scent QA arena, six windows, F8 host heatmap
 make dev_vision P1=archer P2=orc           # the existing close-quarters arena also has scent
 make dev_scent P1=archer P2=orc DEV_QA_SENSES=--qa-senses=client/dev/fixtures/content/blind_tracker.senses.json
-make check_scent                           # headless scent integration
+make check_scent                           # headless scent integration (runs check_olfaction_review first)
+make check_olfaction_review                # Team Lead regressions + coverage probes; renders, needs a display
 python3 tests/scent_check.py --graphical   # native windows and captures
 ```
 
@@ -63,10 +67,16 @@ not enter the rules. The field has one concentration per arena cell and scent
 class, capped at 1.0, plus the age of the newest deposit on that cell.
 
 - Every live tick, each enabled emitter deposits `1.5 × intensity` per second,
-  shared over the cells its confirmed movement crossed since the previous tick.
-  Standing still saturates one cell; walking across a 32-unit tile at creature
-  speed leaves 0.75; a running trainer leaves about 0.2 per tile. A blocked step
-  deposits where the body actually is, never on the attempted destination.
+  walked cell by cell along the segment from its previous confirmed position to
+  the new one: each crossed cell receives the share of the path inside it, so
+  even a one-unit diagonal step that clips a neighbouring cell paints it.
+  Conventions: a point on a grid line belongs to the higher cell, a crossing
+  exactly through a corner steps diagonally without touching the side cells, and
+  a zero-length step deposits everything under the body. Standing still saturates
+  one cell; walking across a 32-unit tile at creature speed leaves 0.75; a running
+  trainer leaves about 0.2 per tile. A blocked step deposits where the body
+  actually is, never on the attempted destination. Solid ground and ground beyond
+  the map keep their share out of the field, so emission stays bounded.
 - Emission starts when summoning completes. A jump longer than two tiles in one
   tick paints nothing, so reset placement and replacement never draw a trail.
 - Every six ticks (10 Hz) the field steps: each open or water cell gives 0.3% to
@@ -90,15 +100,20 @@ edge. The delivered reading per class present is:
 | Field | Meaning |
 | --- | --- |
 | `strength` | Weak ≥ 0.03, Medium ≥ 0.15, Strong ≥ 0.45 of the scaled peak |
-| `freshness` | Very recent < 3 s, Recent < 15 s, Old, from the newest deposit among the sampled cells; **Unknown** when the receptor does not estimate age or nothing is present |
+| `freshness` | Very recent < 3 s, Recent < 15 s, Old, from the newest deposit among the cells that are **detectable on their own** (scaled level at least the weak band). A fresh trace too faint to smell changes nothing, not even the age; mixed ages resolve to the newest detectable cell, so an old Medium trail plus a fresh detectable Weak trace reads Medium and Very recent. **Unknown** when the receptor does not estimate age |
 | `bearing`, `bearing_valid` | Weighted pull of the zones; valid only when at least 35% of the pull agrees. Scent all around the nose is presence with no usable direction |
 | `zones` | The sixteen bands, the sensor's own resolution |
+| `coverage` (per sample) | Sixteen words, one per zone: **Sampled** (every cell centre in reach was measured), **Partial** (some ground in the zone was solid or beyond the map and stayed unknown), **Unsampled** (nothing measured: blind body disc, edge, walls or a reach too small for the tile). A zone can only hold scent when it was measured |
 | `observation_id` | Identifies the observation. Scent IDs live in the upper half of the 32-bit space so they never collide with vision IDs |
 
 A `Scent_Sample` carries the observer, round, sample tick, delivery tick, the
-nose position, the profile and a status: **Disabled**, **Waiting for summon**
-or **Sampled**, with **Unsupported** reserved. No emitter identity, owner,
-faction, hostility, coordinate, action, velocity, count or route is delivered.
+nose position, the profile, the coverage words and a status: **Disabled**,
+**Waiting for summon** or **Sampled**, with **Unsupported** reserved. A sample
+that did not happen has every zone **Unsampled**. Coverage is the nose's own
+sampling footprint at its sixteen-zone resolution; the creature still receives
+no field, no media and no coordinates of anything but itself. No emitter
+identity, owner, faction, hostility, coordinate, action, velocity, count or
+route is delivered.
 Two humans blend into one human reading. Retained samples keep their original
 time; a fresh empty sample clears current detection.
 
@@ -132,15 +147,20 @@ which smell drove a change and what was rejected.
 ## Inspectors and the host heatmap
 
 Both **Senses** windows now have a live **Olfaction** page: the nose at its
-sampled position, sixteen zones per class drawn as wedges at the sensor's own
-resolution (amber human, green orc, opacity by band), the range ring, the dark
-blind disc, a faint ring for sampled-but-empty ground, a bearing arrow when
-valid, and a table with class, strength, freshness and bearing. Dark means not
-sampled; nothing is interpolated into a tiled trail. The page has its own
-LIVE / STALE / DISCONNECTED / WAITING / DISABLED status and its own delivery
-clock, so a fresh eye sample never makes an old smell look current. A paused
-decision debugger does not pause it. The page holds no logs, traces or replay
-controls.
+sampled position, the reach as an outline ring, and every zone drawn by what the
+nose measured there: a faint fill for measured ground without scent, concentric
+stripes for partly measured ground, and nothing at all (dark, like unknown
+ground) for unmeasured zones; the body's blind disc is drawn at its true size.
+Scent wedges (amber human, green orc, opacity by band) are painted only over
+measured ground, a bearing arrow appears when valid, the legend and the readings
+column count measured, partly measured and unknown zones, and a table lists
+class, strength, freshness and bearing. An empty sample therefore never implies
+that the whole reach was measured: a 32-unit reach on 128-unit tiles shows a
+dark disc and "No ground was measured". Nothing is interpolated into a tiled
+trail. The page has its own LIVE / STALE / DISCONNECTED / WAITING / DISABLED
+status and its own delivery clock, so a fresh eye sample never makes an old
+smell look current. A paused decision debugger does not pause it. The page
+holds no logs, traces or replay controls.
 
 The arena's **F4** panel gains a **Senses · Olfaction** group: **Host scent
 field [F8]**, Human scent, Orc scent, Smell range P1 and Smell range P2. The
@@ -154,12 +174,15 @@ Diagnostic toggles never change gameplay.
 
 ## Recording and replay
 
-Trace schema **4** records the consumed nose sample, the private scent memory
-before and after, the scent evidence the searcher acted on, the emitter the
-body knows it has, and a separately labelled host olfaction audit. Replay
-envelope **4** carries it. The AI window and the replay window show the nose
-sample line beside the eye sample; schema-3 and older records say olfaction was
-not recorded. The full host field is not recorded: replay marks it unavailable
+Trace schema **5** records the consumed nose sample with its coverage, the
+private scent memory before and after, the scent evidence the searcher acted on,
+the emitter the body knows it has, and a separately labelled host olfaction
+audit (cells sampled, blind and excluded, peaks, newest ages of any and of
+detectable traces, coherence). Replay envelope **5** carries it; `senses.json`
+is schema **4**. The AI window and the replay window show the nose sample line
+with its measured / partly / unknown zone counts beside the eye sample; schema-4
+records say coverage was not recorded, schema-3 and older records say olfaction
+was not recorded. The full host field is not recorded: replay marks it unavailable
 and never reads the live field for an old frame. Public packets are unchanged
 (protocol 11); audiences receive no scent data.
 
@@ -177,17 +200,19 @@ Switching an emitter off stops new deposits, not old decay.
 | Field step | Inside the box holding scent; worst accepted case (saturated 128 × 128) ≈ 2.4 ms every 100 ms |
 | Nose sample | Cells within range, at most the map; worst case (1,024-unit reach) ≈ 1.5 ms every 200 ms per creature |
 | Readings / memory | At most one per class (two) per sample and per creature |
-| Trace record | Worst case 40,931 bytes under the unchanged 48 KiB ceiling |
-| `senses.json` | Schema 3, still 32 KiB |
+| Trace record | Worst case 41,232 bytes under the unchanged 48 KiB ceiling (coverage words and audit counts added 301 bytes) |
+| `senses.json` | Schema 4, still 32 KiB |
+| Nose sample | Walks the whole reach box, including ground beyond the map, so coverage is known: at most (2 × reach / tile + 1)² cells, 16,641 for the widest accepted profile; worst case ≈ 2.0 ms every 200 ms per creature |
 | `search.json` | Schema 2, still 32 KiB |
 | `scent.json` | Schema 1, 96 KiB cap, 10 Hz, quantized levels and ages per class |
 
 ## Verification
 
 ```sh
-make check_perception check_ai check_session       # 14 / 17 / 60 tests
+make check_perception check_ai check_session       # 17 / 18 / 61 tests
 odin test server -debug -extra-linker-flags:"-L$PWD/build/deps"
 make check_vision_review                           # unchanged Team Lead guarantees
+make check_olfaction_review                        # Team Lead R1–R3 regressions and the coverage fixtures, normal and debug, plus two rendered probes
 make check_senses_windows                          # Olfaction page, delivery clocks, fixtures, staleness
 make check_scent                                   # real trail, orc-only reading, smell-driven search, heatmap, F8/F6 persistence, F7, replay
 python3 tests/scent_check.py --graphical
@@ -195,16 +220,25 @@ python3 tests/senses_windows_check.py --graphical
 make check
 ```
 
-Host tests cover trail persistence and fading, teleport-free reset, terrain
-media, Orc versus human reach, scentless bodies, hidden-emitter invariance
-behind a wall, one-creature replacement, dedicated-worker equivalence, the
-worst-case record ceiling and the bounded field capture. AI tests cover
+Perception tests compare the deposit walk with a dense point oracle across the
+16-, 32-, 64- and 128-unit tile sizes (both directions of the review's diagonal,
+corners, grid lines, standing still, solid ground and the map edge), check that
+freshness follows detectable cells only for both classes at the threshold, and
+check coverage for zero, partial, edge, wall and full cases. Host tests cover
+trail persistence and fading, teleport-free reset, terrain media, Orc versus
+human reach, scentless bodies, hidden-emitter invariance behind a wall,
+one-creature replacement, dedicated-worker equivalence, the worst-case record
+ceiling, the bounded field capture, and that the delivered coverage equals an
+independent classification of the arena's cells and reaches the journal,
+snapshot and live senses file while the audit stays outside the brain input. AI tests cover
 once-only ingestion, retention, investigation, presence, fading, abandonment,
-cooldown, cue precedence, no acquisition and self-trail discounting. The
-integration harness drives a real trainer trail with synthetic keys and checks
+cooldown, cue precedence, no acquisition and self-trail discounting. The integration harness drives a real trainer trail with synthetic keys and checks
 the orc's live reading, its recorded search decision, the drawn heatmap against
-the published field, saved filters across a restart, the reset round and the
-recording. Results and measurements are in the coding-agent report. Physical
+the published field, saved filters across a restart, the reset round, the
+recording, and that the orc's wide nose on the small arena reports measured and
+unmeasured zones with scent only on measured ground. The senses-window harness
+publishes zero-coverage, partial-coverage and invalid (scent in an unmeasured
+zone) fixtures to the real page and checks what it shows and refuses. Results and measurements are in the coding-agent report. Physical
 keyboard and mouse acceptance remains manual.
 
 ## Manual QA steps

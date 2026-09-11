@@ -34,20 +34,25 @@ def wait(condition, message: str, timeout: float = 60):
 def leaks_host_fields(value) -> bool:
     """Brain-side data must never carry host audit fields, even as attachments."""
     if isinstance(value, dict):
-        return any(key in ("verdict", "candidates", "host_audit", "sight_tests", "origin_opaque", "host_scent_audit", "cells_sampled", "cells_blind", "peak", "coherence") or leaks_host_fields(item) for key, item in value.items())
+        return any(key in ("verdict", "candidates", "host_audit", "sight_tests", "origin_opaque", "host_scent_audit", "cells_sampled", "cells_blind", "cells_excluded", "peak", "coherence", "newest_age_ticks", "newest_detectable_age_ticks") or leaks_host_fields(item) for key, item in value.items())
     if isinstance(value, list):
         return any(leaks_host_fields(item) for item in value)
     return False
 
 
-def journal_records(traces: Path, owner: int) -> list[dict]:
-    """Every complete decision for one creature, oldest first, across rotated segments."""
-    records = []
+def journal_lines(traces: Path, owner: int) -> list[bytes]:
+    """Every complete serialized record line for one creature, oldest first, across rotated segments."""
+    lines = []
     for name in (f"ai-{owner}.jsonl.3", f"ai-{owner}.jsonl.2", f"ai-{owner}.jsonl.1", f"ai-{owner}.jsonl"):
         path = traces / name
         if path.exists():
-            records.extend(json.loads(line) for line in path.read_text().splitlines() if line.endswith("}"))
-    return records
+            lines.extend(line for line in path.read_bytes().split(b"\n") if line.endswith(b"}"))
+    return lines
+
+
+def journal_records(traces: Path, owner: int) -> list[dict]:
+    """Every complete decision for one creature, oldest first, across rotated segments."""
+    return [json.loads(line) for line in journal_lines(traces, owner)]
 
 
 def checked(command: list[str], log: Path, timeout: int = 60):
@@ -135,10 +140,10 @@ def main():
             assert record["sight_fan"] == matching[-1]["sight_fan"], "Arena fan differs from debugger evidence"
         for owner in (1, 2):
             snapshot = read(trace_dir / f"ai-{owner}.json")
-            assert snapshot["schema_version"] == 4 and snapshot["owner_id"] == owner and snapshot["dropped_records"] == 0 and snapshot["oversized_records"] == 0 and not snapshot["writer_error"]
+            assert snapshot["schema_version"] == 5 and snapshot["owner_id"] == owner and snapshot["dropped_records"] == 0 and snapshot["oversized_records"] == 0 and not snapshot["writer_error"]
             reasons = set()
             for record in snapshot["records"]:
-                assert record["schema_version"] == 4 and record["owner_id"] == owner and record["input"]["entity_id"] == record["after"]["entity_id"]
+                assert record["schema_version"] == 5 and record["owner_id"] == owner and record["input"]["entity_id"] == record["after"]["entity_id"]
                 assert record["nodes"][0]["thread_id"] == record["worker_id"]
                 assert record["nodes"][-1]["stage"] == "Outcome"
                 assert record["nodes"][-1]["thread_id"] != record["worker_id"], "Action applied on AI worker"
@@ -149,8 +154,10 @@ def main():
                     assert set(sample["cues"][index]) == {"observation_id", "sector", "band"}, sample["cues"][index]
                 reasons.add(record["decision_reason"])
             # Journals rotate at 8 MiB, so the first decisions may already sit in an older segment.
-            journal = journal_records(trace_dir, owner)
-            assert journal and max(len(json.dumps(record, separators=(",", ":"))) for record in journal) <= snapshot["record_limit_bytes"] + 1024
+            # Every serialized record line, as written, must fit the advertised ceiling.
+            lines = journal_lines(trace_dir, owner)
+            assert lines and max(len(line) for line in lines) <= snapshot["record_limit_bytes"], max(len(line) for line in lines)
+            journal = [json.loads(line) for line in lines]
             observed = [r for r in journal if r["decision_reason"] == "Observe"]
             assert observed and observed[0]["input"]["senses"]["vision"]["focused_count"] >= 1, reasons
             oriented = [r for r in journal if r["decision_reason"] == "Orient"]

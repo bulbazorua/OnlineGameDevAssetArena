@@ -18,7 +18,7 @@ func _run() -> void:
 	assert(content.load_catalog().is_empty())
 	var reader := Reader.new()
 	assert(reader.scan(path, content.fingerprint.hex_encode()), reader.error)
-	assert(int(reader.header.schema_version) == 4 and int(reader.header.protocol_version) == Stage.Protocol.HEADER[4])
+	assert(int(reader.header.schema_version) == 5 and int(reader.header.protocol_version) == Stage.Protocol.HEADER[4])
 	var stage := Stage.new()
 	stage.content = content
 	stage.size = Vector2(900, 700)

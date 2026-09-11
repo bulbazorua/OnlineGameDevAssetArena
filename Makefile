@@ -33,7 +33,7 @@ DEV_QA_ARENA ?=
 DEV_QA_SENSES ?=
 
 .PHONY: help build_server run_server run_client run_audience check_client check_session check_connection check_selection check_content check_arena_content check_arena_selection check_movement import_client check ccx cc
-.PHONY: dev_arena dev_vision dev_scent check_dev check_ai check_perception check_vision check_vision_review check_character_ai check_collision_overlay check_scent
+.PHONY: dev_arena dev_vision dev_scent check_dev check_ai check_perception check_vision check_vision_review check_olfaction_review check_character_ai check_collision_overlay check_scent
 .PHONY: ai_debugger check_ai_debugger
 .PHONY: purge_logs check_log_cleanup
 .PHONY: replay
@@ -61,6 +61,7 @@ help:
 	@echo "make dev_scent P1=archer P2=orc - wide scent-trail QA arena; F8 toggles the host scent heatmap"
 	@echo "  DEV_QA_SENSES=--qa-senses=client/dev/fixtures/content/blind_tracker.senses.json stages a blind Orc that can only smell"
 	@echo "make check_scent - verify scent trails, olfaction pages, host heatmap, saved filters, reset and replay; graphical: tests/scent_check.py --graphical"
+	@echo "make check_olfaction_review - Team Lead olfaction regressions and coverage fixtures in normal and debug builds, plus two rendered probes (needs a display)"
 	@echo "Dev clients: F3 physical colliders; F4 grouped filters; F5 vision cones (AI_DEBUG=1)"
 	@echo "make check_character_ai - verify autonomous observation/turning and delayed audience state"
 	@echo "SEED=42 is forwarded to the host; the Observe tactic is deterministic and reserves it"
@@ -140,6 +141,8 @@ check_log_cleanup:
 	$(PYTHON) tests/log_cleanup_check.py
 
 check_ai_debugger: build_server check_session
+	$(ODIN) test server/content -debug -out:build/content_tests_debug
+	$(ODIN) test server/simulation -debug -out:build/simulation_tests_debug
 	$(ODIN) test server -debug -out:build/ai_debug_tests -extra-linker-flags:"-L$(abspath build/deps)"
 	$(PYTHON) tests/ai_debugger_check.py --godot="$(GODOT)" --odin="$(ODIN)"
 
@@ -150,7 +153,18 @@ check_search: build/deps/libenet.a
 check_senses_windows: build/deps/libenet.a
 	$(PYTHON) tests/senses_windows_check.py --godot="$(GODOT)" --odin="$(ODIN)"
 
-check_scent: build/deps/libenet.a
+# Independent olfaction regressions: the Team Lead's probes and the coding agent's
+# coverage fixtures. The two Godot probes render the real control, so they need a display.
+check_olfaction_review:
+	@mkdir -p build/verification/olfaction-review-20260911 build/verification/olfaction-fix-20260911/fixtures build/verification/olfaction-fix-20260911/captures
+	$(ODIN) test tests/olfaction_review -out:build/olfaction_review_tests
+	$(ODIN) test tests/olfaction_review -debug -out:build/olfaction_review_tests_debug
+	$(ODIN) test tests/olfaction_coverage -out:build/olfaction_coverage_tests
+	$(ODIN) test tests/olfaction_coverage -debug -out:build/olfaction_coverage_tests_debug
+	$(GODOT) --path client --script ../tests/olfaction_review/coverage_view_check.gd
+	$(GODOT) --path client --script ../tests/olfaction_coverage/coverage_render_check.gd
+
+check_scent: build/deps/libenet.a check_olfaction_review
 	$(PYTHON) tests/scent_check.py --godot="$(GODOT)" --odin="$(ODIN)"
 
 run_client: import_runtime_client
@@ -191,6 +205,8 @@ check_vision_review: build/deps/libenet.a
 	$(ODIN) test tests/vision_review -debug -out:build/vision_review_tests_debug -extra-linker-flags:"-L$(abspath build/deps)"
 
 check_session: build/deps/libenet.a check_ai
+	$(ODIN) test server/content -out:build/content_tests
+	$(ODIN) test server/simulation -out:build/simulation_tests
 	$(ODIN) test server -out:build/session_tests -extra-linker-flags:"-L$(abspath build/deps)"
 
 check_dev: build_server check_session
@@ -271,7 +287,7 @@ check_trainers: build_server check_client
 check_character_ai: build_server check_client check_session
 	$(GODOT) --headless --path client --script $(abspath tests/character_ai_check.gd) -- --server=$(abspath build/server)
 
-check: check_scent check_search check_log_cleanup check_ai_debugger check_senses_windows check_vision_review check_collision_overlay check_sense_overlay check_character_ai check_trainers check_player_harness check_character_contract check_asset_pipeline check_character_modules check_playable_characters check_tiny_swords check_content check_arena_content check_connection check_selection check_arena_selection check_movement check_land check_camera check_audience_delay check_dev
+check: check_scent check_olfaction_review check_search check_log_cleanup check_ai_debugger check_senses_windows check_vision_review check_collision_overlay check_sense_overlay check_character_ai check_trainers check_player_harness check_character_contract check_asset_pipeline check_character_modules check_playable_characters check_tiny_swords check_content check_arena_content check_connection check_selection check_arena_selection check_movement check_land check_camera check_audience_delay check_dev
 
 ccx:
 	codex --dangerously-bypass-approvals-and-sandbox

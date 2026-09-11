@@ -1,72 +1,52 @@
 package main
 
 import "core:math"
+import "simulation"
 
+// Wire codec for the public session. Command kinds and rejection reasons are the simulation's own.
 PROTOCOL_HEADER :: [5]u8{'O', 'G', 'A', 'A', 11}
-Message_Kind :: enum u8 {
-    Hello = 1, Welcome = 2, Session_State = 3,
-    Start_Selection = 4, Select_Character = 5, Set_Ready = 6,
-    Return_To_Lobby = 7, Command_Rejected = 8, Select_Arena = 9,
-    Input = 10, World_State = 11, Dev_Reset_Search = 12,
-}
 Reject_Reason :: enum u32 { Protocol = 1, Content_Mismatch = 2 }
-Command_Reject_Reason :: enum u8 {
-    None, Audience_Read_Only, Wrong_Phase, Stale_Round,
-    Unknown_Character, Selection_Changed, Need_Two_Players, Unknown_Arena, Arena_Changed,
-    Dev_Only, Search_Reset_Unavailable,
-}
-Client_Command :: struct {
-    kind: Message_Kind,
-    wants_audience: bool,
-    fingerprint: [32]u8,
-    round_id: u32,
-    character_id: u16,
-    map_id: u16,
-    ready: bool,
-    input_sequence: u32,
-    input_mask: u8,
-}
 
 protocol_read_u16 :: proc(bytes: []u8) -> u16 { return u16(bytes[0]) | u16(bytes[1]) << 8 }
 protocol_read_u32 :: proc(bytes: []u8) -> u32 { return u32(bytes[0]) | u32(bytes[1]) << 8 | u32(bytes[2]) << 16 | u32(bytes[3]) << 24 }
 protocol_write_u16 :: proc(bytes: []u8, value: u16) { for i in 0..<2 { bytes[i] = u8(value >> u8(i * 8) & 255) } }
 protocol_write_u32 :: proc(bytes: []u8, value: u32) { for i in 0..<4 { bytes[i] = u8(value >> u8(i * 8) & 255) } }
-protocol_header :: proc(bytes: []u8, kind: Message_Kind) { for byte, i in PROTOCOL_HEADER { bytes[i] = byte }; bytes[5] = u8(kind) }
+protocol_header :: proc(bytes: []u8, kind: simulation.Message_Kind) { for byte, i in PROTOCOL_HEADER { bytes[i] = byte }; bytes[5] = u8(kind) }
 
-protocol_decode :: proc(payload: []u8, channel: u8) -> (command: Client_Command, valid: bool) {
+protocol_decode :: proc(payload: []u8, channel: u8) -> (command: simulation.Client_Command, valid: bool) {
     if len(payload) < 6 { return {}, false }
     for value, index in PROTOCOL_HEADER { if payload[index] != value { return {}, false } }
     expected_channel: u8 = 0
-    if payload[5] == u8(Message_Kind.Input) { expected_channel = 1 }
+    if payload[5] == u8(simulation.Message_Kind.Input) { expected_channel = 1 }
     if channel != expected_channel { return {}, false }
     switch payload[5] {
-    case u8(Message_Kind.Hello):
+    case u8(simulation.Message_Kind.Hello):
         if len(payload) != 39 || payload[6] > 1 { return {}, false }
         command.kind = .Hello
         command.wants_audience = payload[6] == 1
         copy(command.fingerprint[:], payload[7:])
-    case u8(Message_Kind.Start_Selection), u8(Message_Kind.Return_To_Lobby), u8(Message_Kind.Dev_Reset_Search):
+    case u8(simulation.Message_Kind.Start_Selection), u8(simulation.Message_Kind.Return_To_Lobby), u8(simulation.Message_Kind.Dev_Reset_Search):
         if len(payload) != 10 { return {}, false }
-        command.kind = Message_Kind(payload[5])
+        command.kind = simulation.Message_Kind(payload[5])
         command.round_id = protocol_read_u32(payload[6:])
-    case u8(Message_Kind.Select_Character):
+    case u8(simulation.Message_Kind.Select_Character):
         if len(payload) != 12 { return {}, false }
         command.kind = .Select_Character
         command.round_id = protocol_read_u32(payload[6:])
         command.character_id = protocol_read_u16(payload[10:])
-    case u8(Message_Kind.Set_Ready):
+    case u8(simulation.Message_Kind.Set_Ready):
         if len(payload) != 15 || payload[14] > 1 { return {}, false }
         command.kind = .Set_Ready
         command.round_id = protocol_read_u32(payload[6:])
         command.character_id = protocol_read_u16(payload[10:])
         command.map_id = protocol_read_u16(payload[12:])
         command.ready = payload[14] == 1
-    case u8(Message_Kind.Select_Arena):
+    case u8(simulation.Message_Kind.Select_Arena):
         if len(payload) != 12 { return {}, false }
         command.kind = .Select_Arena
         command.round_id = protocol_read_u32(payload[6:])
         command.map_id = protocol_read_u16(payload[10:])
-    case u8(Message_Kind.Input):
+    case u8(simulation.Message_Kind.Input):
         if len(payload) != 15 || payload[14] > 31 { return {}, false }
         command.kind = .Input
         command.round_id = protocol_read_u32(payload[6:])
@@ -84,25 +64,25 @@ protocol_encode_welcome :: proc(player_id: u8, audience_delay_ms: u32 = 0) -> (r
     return
 }
 
-protocol_encode_session :: proc(session: ^Session) -> (result: [164]u8) {
+protocol_encode_session :: proc(session: ^simulation.Session) -> (result: [164]u8) {
     protocol_header(result[:], .Session_State)
     protocol_write_u32(result[6:], session.round_id)
     protocol_write_u32(result[10:], session.revision)
     result[14] = u8(session.phase)
-    result[15] = session_player_mask(session)
+    result[15] = simulation.session_player_mask(session)
     protocol_write_u16(result[16:], session.audience_count)
     protocol_write_u16(result[18:], session.map_id)
-    result[26] = session_countdown_seconds(session)
+    result[26] = simulation.session_countdown_seconds(session)
     protocol_write_u32(result[27:], session.server_tick)
     result[31] = session.character_count
     for index in 0..<int(session.character_count) { protocol_write_character(result[32 + index * 20:], &session.characters[index]) }
     if session.character_count == 2 {
-        for index in 0..<MAX_PLAYERS { protocol_write_character(result[72 + index * 20:], &session.trainers[index].body) }
+        for index in 0..<simulation.MAX_PLAYERS { protocol_write_character(result[72 + index * 20:], &session.trainers[index].body) }
         protocol_write_u16(result[112:], session.summon_elapsed_ticks)
-        for index in 0..<MAX_PLAYERS { protocol_write_locomotion(result[114 + index * 6:], &session.characters[index]) }
-        for index in 0..<MAX_PLAYERS { protocol_write_locomotion(result[126 + index * 6:], &session.trainers[index].body) }
-        for index in 0..<MAX_PLAYERS { protocol_write_target_alert(result[138 + index * 5:], &session.characters[index]) }
-        for index in 0..<MAX_PLAYERS { protocol_write_trainer_energy(result[148 + index * 8:], &session.trainers[index]) }
+        for index in 0..<simulation.MAX_PLAYERS { protocol_write_locomotion(result[114 + index * 6:], &session.characters[index]) }
+        for index in 0..<simulation.MAX_PLAYERS { protocol_write_locomotion(result[126 + index * 6:], &session.trainers[index].body) }
+        for index in 0..<simulation.MAX_PLAYERS { protocol_write_target_alert(result[138 + index * 5:], &session.characters[index]) }
+        for index in 0..<simulation.MAX_PLAYERS { protocol_write_trainer_energy(result[148 + index * 8:], &session.trainers[index]) }
     }
     for player, index in session.players {
         offset := 20 + index * 3
@@ -112,7 +92,7 @@ protocol_encode_session :: proc(session: ^Session) -> (result: [164]u8) {
     return
 }
 
-protocol_encode_rejection :: proc(round_id: u32, kind: Message_Kind, reason: Command_Reject_Reason) -> (result: [12]u8) {
+protocol_encode_rejection :: proc(round_id: u32, kind: simulation.Message_Kind, reason: simulation.Command_Reject_Reason) -> (result: [12]u8) {
     protocol_header(result[:], .Command_Rejected)
     protocol_write_u32(result[6:], round_id)
     result[10] = u8(kind)
@@ -120,9 +100,9 @@ protocol_encode_rejection :: proc(round_id: u32, kind: Message_Kind, reason: Com
     return
 }
 
-protocol_session_size :: proc(session: ^Session) -> int { return 164 if session.character_count == 2 else 32 }
+protocol_session_size :: proc(session: ^simulation.Session) -> int { return 164 if session.character_count == 2 else 32 }
 
-protocol_write_character :: proc(bytes: []u8, character: ^Character) {
+protocol_write_character :: proc(bytes: []u8, character: ^simulation.Character) {
     protocol_write_u32(bytes, character.entity_id)
     protocol_write_u16(bytes[4:], character.definition_id)
     bytes[6] = character.owner_id
@@ -132,34 +112,34 @@ protocol_write_character :: proc(bytes: []u8, character: ^Character) {
     bytes[19] = character.input_mask
 }
 
-protocol_encode_world :: proc(session: ^Session) -> (result: [147]u8) {
+protocol_encode_world :: proc(session: ^simulation.Session) -> (result: [147]u8) {
     assert(session.phase == .In_Arena && session.character_count == 2)
     protocol_header(result[:], .World_State)
     protocol_write_u32(result[6:], session.round_id)
     protocol_write_u32(result[10:], session.server_tick)
     result[14] = session.character_count
-    for index in 0..<MAX_PLAYERS { protocol_write_character(result[15 + index * 20:], &session.characters[index]) }
-    for index in 0..<MAX_PLAYERS { protocol_write_character(result[55 + index * 20:], &session.trainers[index].body) }
+    for index in 0..<simulation.MAX_PLAYERS { protocol_write_character(result[15 + index * 20:], &session.characters[index]) }
+    for index in 0..<simulation.MAX_PLAYERS { protocol_write_character(result[55 + index * 20:], &session.trainers[index].body) }
     protocol_write_u16(result[95:], session.summon_elapsed_ticks)
-    for index in 0..<MAX_PLAYERS { protocol_write_locomotion(result[97 + index * 6:], &session.characters[index]) }
-    for index in 0..<MAX_PLAYERS { protocol_write_locomotion(result[109 + index * 6:], &session.trainers[index].body) }
-    for index in 0..<MAX_PLAYERS { protocol_write_target_alert(result[121 + index * 5:], &session.characters[index]) }
-    for index in 0..<MAX_PLAYERS { protocol_write_trainer_energy(result[131 + index * 8:], &session.trainers[index]) }
+    for index in 0..<simulation.MAX_PLAYERS { protocol_write_locomotion(result[97 + index * 6:], &session.characters[index]) }
+    for index in 0..<simulation.MAX_PLAYERS { protocol_write_locomotion(result[109 + index * 6:], &session.trainers[index].body) }
+    for index in 0..<simulation.MAX_PLAYERS { protocol_write_target_alert(result[121 + index * 5:], &session.characters[index]) }
+    for index in 0..<simulation.MAX_PLAYERS { protocol_write_trainer_energy(result[131 + index * 8:], &session.trainers[index]) }
     return
 }
 
-protocol_write_locomotion :: proc(bytes: []u8, character: ^Character) {
+protocol_write_locomotion :: proc(bytes: []u8, character: ^simulation.Character) {
     bytes[0] = u8(character.locomotion)
     bytes[1] = u8(character.facing)
     protocol_write_u32(bytes[2:], character.state_start_tick)
 }
 
-protocol_write_target_alert :: proc(bytes: []u8, character: ^Character) {
+protocol_write_target_alert :: proc(bytes: []u8, character: ^simulation.Character) {
     bytes[0] = u8(character.target_alert)
     protocol_write_u32(bytes[1:], character.target_acquired_tick)
 }
 
-protocol_write_trainer_energy :: proc(bytes: []u8, trainer: ^Trainer) {
+protocol_write_trainer_energy :: proc(bytes: []u8, trainer: ^simulation.Trainer) {
     protocol_write_u16(bytes, trainer.energy)
     bytes[2] = trainer.energy_recovery_ticks
     bytes[3] = u8(trainer.run_exhausted)

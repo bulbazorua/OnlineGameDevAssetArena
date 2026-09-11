@@ -48,9 +48,9 @@ event log, raw payload, Vision view and legacy spatial view. Pause and event/dec
 stepping inspect recorded execution while the arena continues. The inspector is not an
 audience peer and cannot submit input. It shows the current real Observe decisions with the
 consumed eye sample, coarse cues and aged memory; a labelled Host diagnostics toggle adds
-developer-only rejection reasons. The nose sample, scent memory and scent-driven search
-evidence are recorded too (trace schema 4). Hearing, moods and learned memory are
-explicitly unavailable.
+developer-only rejection reasons. The nose sample with its zone coverage, scent memory
+and scent-driven search evidence are recorded too (trace schema 5; schema-4 recordings
+say coverage was not recorded). Hearing, moods and learned memory are explicitly unavailable.
 
 The timeline draws only visible rows and loads traces in the background. The tree
 branches from top to bottom, with labeled colors for chosen, rejected, skipped and
@@ -68,6 +68,8 @@ one per creature, beside both decision debuggers. They show current vision data
 with a spatial view, focused positions, coarse direction/range cues and sample
 age. The **Olfaction** page shows the delivered nose sample as sixteen zones per
 scent class with strength, freshness and a coarse bearing, on its own live clock.
+It draws only ground the nose measured: faint for measured empty zones, striped
+for partly measured ones, dark for unknown ground beyond edges, walls or reach.
 Hearing, tactile/terrain and pain are labeled **Not implemented**.
 The separate **Exploration memory** tab shows that creature's remembered visited
 regions, age and fading strength. Click a map square or row for details; this
@@ -125,7 +127,7 @@ flowchart TD
 | --- | --- |
 | `tools/dev_session.py` / `DevSessionRunner` | Validate arguments, stage projects, launch in role order, watch files, publish reloads, own process cleanup |
 | `server/dev_scenario.odin` / `Dev_Scenario` | Resolve canonical keys; wait for both fighters; apply choices once |
-| `server/movement.odin` / `session_enter_arena` | Shared spawning for both ordinary countdown and direct development entry |
+| `server/simulation/session.odin` / `session_start_match`, `session_enter_arena` | Shared spawning for both ordinary countdown and direct development entry |
 | `client/dev/reload_controller.gd` | Development-only local notifications, cached-resource refresh, redraw, and status acknowledgments |
 | `client/dev/validate_project.gd` | Validate candidate client content/resources in a separate headless process |
 | `server/brain_workers.odin`, `server/dev_ai_debug.odin` | Dedicated AI workers, copied trace queue and independent bounded journal writer |
@@ -160,6 +162,7 @@ make check_dev
 make check_ai_debugger
 make check_senses_windows
 make check_scent
+make check_olfaction_review   # Team Lead olfaction regressions + coverage probes; renders, so it needs a display
 make check
 # Also capture actual player/audience renders during the reload check:
 python3 tests/dev_workflow_check.py --graphical
@@ -174,8 +177,9 @@ Normal `make dev_arena` and `make dev_vision` now run the private [opponent-sear
 
 For repeatable manual search QA, use **F4 → Reset search [F7]** or press **F7** in a player window. Both creatures receive fresh search memories and separated, walkable starting positions beyond each other's vision. Trainers move nearby, the summon pause restarts, and all six windows and saved debug settings stay open. If the arena cannot fit a safe spread, the host rejects the reset without moving anything.
 
-Every body also leaves scent on the ground it crosses; creatures smell trails
-with their own reach and the search follows them ([olfactory trails](06n-olfactory-trails.md)).
+Every body also leaves scent on every cell its confirmed step crosses; creatures smell
+trails with their own reach and the search follows them ([olfactory trails](06n-olfactory-trails.md)).
+`make check` now includes `check_olfaction_review`, whose two rendered probes need a display.
 
 Hold **Space + WASD / arrows** to run your trainer at twice walking speed. The
 energy meter supports five seconds of continuous running, then recovers while

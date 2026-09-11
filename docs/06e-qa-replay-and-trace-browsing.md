@@ -2,9 +2,10 @@
 
 Checkpoint 6A.2, implemented and checked on 2026-09-10. The plan below was recorded
 before replay implementation. It extends the [dedicated-thread harness](06d-ai-debugger-harness.md).
-The replay envelope is now 4 with trace schema 4 ([olfaction](06n-olfactory-trails.md));
-envelopes 1–3 still decode with their own schemas, and the host scent field is not
-recorded, so replay marks it unavailable.
+The replay envelope is now 5 with trace schema 5 ([olfaction](06n-olfactory-trails.md),
+nose coverage); envelopes 1–4 still decode with their own schemas, a schema-4 frame
+says its coverage was not recorded, and the host scent field is not recorded, so
+replay marks it unavailable.
 
 ## Run it
 

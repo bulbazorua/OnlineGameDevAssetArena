@@ -1,12 +1,13 @@
 package main
 
+import "simulation"
 import "core:encoding/json"
 import "core:fmt"
 import "core:os"
 
 REPLAY_LIMIT_BYTES :: 128 * 1024 * 1024
-// Envelope 4 carries olfaction and search traces; historical readers keep their own schemas.
-REPLAY_SCHEMA :: 4
+// Envelope 5 carries schema-5 traces (nose coverage); historical readers keep their own schemas.
+REPLAY_SCHEMA :: 5
 // A frame line must stay below the reader's 128 KiB cap; oversized frames keep
 // the world packet and drop their traces, which the end record counts.
 REPLAY_LINE_LIMIT :: 120 * 1024
@@ -49,12 +50,12 @@ ai_debug_hex :: proc(bytes: []u8) -> string {
     return string(output)
 }
 
-ai_debug_capture_world :: proc(debug: ^AI_Debug, session: ^Session) {
+ai_debug_capture_world :: proc(debug: ^AI_Debug, session: ^simulation.Session) {
     if debug == nil { return }
     debug.world_sequence += 1
     capture := Replay_Capture{sequence = debug.world_sequence, tick = session.server_tick, round_id = session.round_id,
         packet = protocol_encode_session(session), packet_size = protocol_session_size(session)}
-    capture.senses = {active = session.phase == .In_Arena && session.character_count == MAX_PLAYERS,
+    capture.senses = {active = session.phase == .In_Arena && session.character_count == simulation.MAX_PLAYERS,
         round_id = session.round_id, map_id = session.map_id}
     for character, owner in session.characters { capture.senses.entities[owner] = character.entity_id }
     ai_debug_push(debug, AI_Debug_Job{is_world = true, world = capture})
@@ -81,16 +82,16 @@ replay_capture :: proc(debug: ^AI_Debug, capture: ^Replay_Capture) {
         file, error := os.open(path, {.Write, .Create, .Trunc})
         if error != nil { r.status = "open_error"; ai_debug_error(debug, "Cannot open QA recording"); return }
         r.file = file
-        header := Replay_Header{"header", REPLAY_SCHEMA, int(PROTOCOL_HEADER[4]), SIMULATION_HZ, debug.run_id, debug.fingerprint, debug.seed, AI_DEBUG_SCHEMA}
+        header := Replay_Header{"header", REPLAY_SCHEMA, int(PROTOCOL_HEADER[4]), simulation.SIMULATION_HZ, debug.run_id, debug.fingerprint, debug.seed, AI_DEBUG_SCHEMA}
         data, encode_error := json.marshal(header)
         defer delete(data)
         if encode_error != nil { r.status = "encode_error"; return }
         if !replay_write_line(debug, data) { return }
         r.status = "recording"
     }
-    views: [MAX_PLAYERS]AI_Debug_Record_View
+    views: [simulation.MAX_PLAYERS]AI_Debug_Record_View
     count := 0
-    for owner in 0..<MAX_PLAYERS {
+    for owner in 0..<simulation.MAX_PLAYERS {
         if debug.totals[owner] == 0 { continue }
         trace := &debug.history[owner][(debug.totals[owner] - 1) % AI_DEBUG_HISTORY]
         if trace.input.tick == capture.tick && trace.input.round_id == capture.round_id {

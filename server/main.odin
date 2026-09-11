@@ -1,5 +1,7 @@
 package main
 
+import "content"
+import "simulation"
 import "core:flags"
 import "core:fmt"
 import "core:math"
@@ -7,6 +9,9 @@ import "core:os"
 import "core:time"
 import "core:c/libc"
 import "core:sync"
+
+// Publication cadence for World_State: every third simulation tick, independent of rendering.
+SNAPSHOT_INTERVAL :: 3
 
 host_stop_requested: i32
 
@@ -44,20 +49,20 @@ run_host :: proc(options: Options) -> int {
         return 1
     }
     delay_ms := u32(math.ceil(options.audience_delay * 1000))
-    content: Game_Content
-    if !content_load(&content, options.content_dir) { return 1 }
-    defer content_destroy(&content)
-    scenario, scenario_ok := dev_scenario_load(options, &content)
+    catalog: content.Game_Content
+    if !content.load(&catalog, options.content_dir) { return 1 }
+    defer content.destroy(&catalog)
+    scenario, scenario_ok := dev_scenario_load(options, &catalog)
     if !scenario_ok { return 1 }
     if options.dev_validate_only { return 0 }
-    simulation := Simulation{seed = options.seed, observe_only = options.dev_observe_only}
+    sim := simulation.Simulation{seed = options.seed, observe_only = options.dev_observe_only}
     workers: Brain_Workers
     brain_workers_init(&workers)
     defer brain_workers_destroy(&workers)
-    debug := ai_debug_open(options.dev_ai_dir, options.dev_ai_run, content.fingerprint, &content, seed = options.seed)
+    debug := ai_debug_open(options.dev_ai_dir, options.dev_ai_run, catalog.fingerprint, &catalog, seed = options.seed)
     defer ai_debug_close(debug)
-    session := &simulation.session
-    network, ok := network_open(options.bind, options.port, session, &content, delay_ms)
+    session := &sim.session
+    network, ok := network_open(options.bind, options.port, session, &catalog, delay_ms)
     if !ok {
         return 1
     }
@@ -67,19 +72,19 @@ run_host :: proc(options: Options) -> int {
     fmt.printfln("[AI] %s; senses=game_catalog; seed=%d; two dedicated brain threads; 60 Hz actions", controller_name, options.seed)
     previous := time.tick_now()
     accumulator: time.Duration
-    step :: time.Second / SIMULATION_HZ
+    step :: time.Second / simulation.SIMULATION_HZ
     for sync.atomic_load(&host_stop_requested) == 0 {
         if !network_poll(&network) {
             return 1
         }
-        if dev_scenario_start(&scenario, session, &content) { network.session_dirty = true }
+        if dev_scenario_start(&scenario, session, &catalog) { network.session_dirty = true }
         now := time.tick_now()
         accumulator += min(time.tick_diff(previous, now), 250 * time.Millisecond)
         previous = now
         world_due := false
         for accumulator >= step {
             accumulator -= step
-            if simulation_tick(&simulation, &content, &workers, debug) { network.session_dirty = true }
+            if host_simulation_step(&sim, &catalog, &workers, debug) { network.session_dirty = true }
             if session.server_tick % SNAPSHOT_INTERVAL == 0 { world_due = true }
         }
         if network.session_dirty { network_publish_session(&network) }

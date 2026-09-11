@@ -24,7 +24,7 @@ for its owner filter, simulation-clock aging and lifecycle checks.
    two entity bindings. The writer updates it even if replay has reached its size
    limit. `sense_debug_collect` excludes old-round and replaced-entity records,
    and produces no readings in the lobby. It never exposes world positions.
-4. `server/dev_senses.odin` publishes `senses.json`, schema 2, with the current
+4. `server/dev_senses.odin` publishes `senses.json`, now schema 4, with the current
    projection and timing. It writes a temporary file, checks the 32 KiB ceiling
    and replaces the previous file. Consumers can miss publications without
    making a backlog. The shared queue's existing drop count remains authoritative.
@@ -92,8 +92,9 @@ generation without resetting the match. Senses drawings use geometry and labels,
 so they validate resource notifications without recreating an arena or connection.
 
 Olfaction now uses this boundary: `obs.Scent_Sample` travels in the same
-records with its own delivery clock, `olfaction_readings.gd` projects current
-rows and `olfaction_sensor_view.gd` draws the sampled zones ([deep dive](olfaction.md)).
+records with its own delivery clock and its zone coverage, `olfaction_readings.gd`
+projects current rows and coverage counts, and `olfaction_sensor_view.gd` draws
+measured, partly measured and unknown zones apart ([deep dive](olfaction.md)).
 Future senses get their own typed observations and a presentation adapter at
 the same boundary. Hearing events need explicit freshness and identity rules; a
 current empty vision array cannot serve as their default. Do not add an

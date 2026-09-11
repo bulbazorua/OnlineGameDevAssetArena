@@ -1,5 +1,6 @@
 package main
 
+import "simulation"
 import obs "observations"
 import "perception"
 import "core:encoding/base64"
@@ -47,7 +48,7 @@ Scent_Debug_Snapshot :: struct {
 
 // Copy the field into the capture slot when it changed. A memcpy-sized lock,
 // no JSON, no file work on the simulation thread; nothing is read back.
-ai_debug_capture_scent :: proc(debug: ^AI_Debug, battle: ^Battle_Runtime, session: ^Session) {
+ai_debug_capture_scent :: proc(debug: ^AI_Debug, battle: ^simulation.Battle_Runtime, session: ^simulation.Session) {
     if debug == nil { return }
     field := &battle.scent.field
     active := session.phase == .In_Arena && battle.bound && perception.scent_field_valid(field)
@@ -66,7 +67,7 @@ ai_debug_capture_scent :: proc(debug: ^AI_Debug, battle: ^Battle_Runtime, sessio
     for class in obs.Scent_Class {
         for index in 0..<field.width * field.height {
             capture.levels[class][index] = u8(clamp(field.levels[class][index] / perception.SCENT_CAP * 255 + 0.5, 0, 255))
-            capture.ages[class][index] = u8(min(255, u32(field.ages[class][index]) * perception.SCENT_STEP_TICKS / SIMULATION_HZ))
+            capture.ages[class][index] = u8(min(255, u32(field.ages[class][index]) * perception.SCENT_STEP_TICKS / simulation.SIMULATION_HZ))
         }
     }
 }

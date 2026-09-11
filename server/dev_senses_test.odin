@@ -1,5 +1,6 @@
 package main
 
+import "simulation"
 import "core:testing"
 import "core:encoding/json"
 import obs "observations"
@@ -9,7 +10,7 @@ live_senses_drop_old_lifecycles_without_waiting_for_new_decisions :: proc(t: ^te
     debug := new(AI_Debug)
     defer free(debug)
     debug.sense_world = {active = true, round_id = 4, map_id = 2, entities = {30, 31}}
-    for owner in 0..<MAX_PLAYERS {
+    for owner in 0..<simulation.MAX_PLAYERS {
         r := &debug.history[owner][0]
         r.owner_id, r.map_id, r.definition_id = owner + 1, 2, 1
         r.input.round_id, r.input.entity_id = 4, u32(30 + owner)
@@ -19,7 +20,7 @@ live_senses_drop_old_lifecycles_without_waiting_for_new_decisions :: proc(t: ^te
         debug.delivery[owner].vision.delivered_us = 123
         debug.delivery[owner].olfaction.delivered_us = 456
     }
-    records: [MAX_PLAYERS]Sense_Debug_Record
+    records: [simulation.MAX_PLAYERS]Sense_Debug_Record
     testing.expect(t, sense_debug_collect(debug, &records) == 2)
     testing.expect(t, records[0].delivered_us == 123 && records[0].scent_delivered_us == 456)
     debug.sense_world.entities[0] = 99
@@ -77,8 +78,9 @@ live_senses_envelope_fits_bounded_reader_at_maximum_evidence :: proc(t: ^testing
         reading = {observation_id = 0xffffffff, class = obs.Scent_Class(index), strength = .Medium, freshness = .Very_Recent, bearing_valid = true, bearing = .North_West}
         for &zone in reading.zones { zone = .Medium }
     }
+    for &zone in nose.coverage { zone = .Unsampled }
     widest.input.own_emitter = {true, .Human, 4}
-    records := [MAX_PLAYERS]Sense_Debug_Record{sense_debug_record(&widest, 1000, 1000), sense_debug_record(&widest, 1000, 1000)}
+    records := [simulation.MAX_PLAYERS]Sense_Debug_Record{sense_debug_record(&widest, 1000, 1000), sense_debug_record(&widest, 1000, 1000)}
     records[0].owner_id = 1
     snapshot := Sense_Debug_Snapshot{schema_version = SENSE_DEBUG_SCHEMA, run_id = "run/generation-100/attempt-100",
         fingerprint = "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff", published_us = 2000,

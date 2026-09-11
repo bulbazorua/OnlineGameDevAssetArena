@@ -1,5 +1,6 @@
 package main
 
+import "simulation"
 import "core:time"
 
 DEFAULT_AUDIENCE_DELAY_MS :: 5000
@@ -8,7 +9,7 @@ AUDIENCE_SAMPLE_INTERVAL :: 50 * time.Millisecond
 
 Audience_Frame :: struct {
     captured_at: time.Duration,
-    session: Session,
+    session: simulation.Session,
 }
 
 // One bounded history shared by all viewers, including when none are connected.
@@ -19,7 +20,7 @@ Audience_Stream :: struct {
     head, count: int,
     last_capture: time.Duration,
     has_capture, has_latest: bool,
-    latest: Session,
+    latest: simulation.Session,
 }
 
 audience_init :: proc(delay_ms: u32) -> Audience_Stream {
@@ -38,7 +39,7 @@ audience_destroy :: proc(stream: ^Audience_Stream) {
 
 // Elapsed monotonic wall time, not simulation ticks: catch-up ticks must never
 // release information early. Return only the newest frame old enough to send.
-audience_advance :: proc(stream: ^Audience_Stream, live: ^Session, now: time.Duration) -> (released: bool) {
+audience_advance :: proc(stream: ^Audience_Stream, live: ^simulation.Session, now: time.Duration) -> (released: bool) {
     if stream.delay_ms == 0 { return false }
     delay := time.Duration(stream.delay_ms) * time.Millisecond
     for stream.count > 0 {
