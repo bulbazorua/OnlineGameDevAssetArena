@@ -1,6 +1,7 @@
 package main
 
 import "content"
+import "diagnostics"
 import "simulation"
 import "core:flags"
 import "core:fmt"
@@ -43,7 +44,7 @@ main :: proc() {
 
 run_host :: proc(options: Options) -> int {
     if options.dev_observe_only && !options.dev { return 1 }
-    if !ai_debug_options_valid(options) { return 1 }
+    if !diagnostics.options_valid(options.dev, options.bind, options.dev_ai_dir, options.dev_ai_run) { return 1 }
     if !(options.audience_delay >= 0 && options.audience_delay <= 60) {
         fmt.eprintln("[host] --audience-delay must be a finite number from 0 to 60 seconds.")
         return 1
@@ -59,8 +60,8 @@ run_host :: proc(options: Options) -> int {
     workers: Brain_Workers
     brain_workers_init(&workers)
     defer brain_workers_destroy(&workers)
-    debug := ai_debug_open(options.dev_ai_dir, options.dev_ai_run, catalog.fingerprint, &catalog, seed = options.seed)
-    defer ai_debug_close(debug)
+    debug := diagnostics.open(options.dev_ai_dir, options.dev_ai_run, catalog.fingerprint, int(PROTOCOL_HEADER[4]), &catalog, seed = options.seed)
+    defer diagnostics.close(debug)
     session := &sim.session
     network, ok := network_open(options.bind, options.port, session, &catalog, delay_ms)
     if !ok {

@@ -82,6 +82,18 @@ def check_bound_olfaction(state: dict, record: dict, records: list[dict]) -> Non
     check_coverage(state, nose)
 
 
+def check_arena_overview(state: dict) -> None:
+    """The shared arena frame: every page's legend fits, arena view is the default, and the host field
+    is live with a bounded reader that never rebuilds the heatmap more often than it polls."""
+    fits = state["overview_legends_fit"]
+    assert all(fits.values()), fits
+    assert state["views"] == {"vision": "arena", "olfaction": "arena", "memory": "arena"}, state["views"]
+    field = state["scent_field"]
+    assert field["status"] == "LIVE" and field["matches"] and field["painted_cells"] > 0 and not field["error"], field
+    assert 1 <= field["rebuilds"] <= field["polls"], field
+    assert field["read_us_max"] < 50000, field
+
+
 def check_coverage(state: dict, nose: dict) -> None:
     """Coverage is the nose's own footprint: sixteen zone words, scent only on measured ground, shown as counted."""
     coverage = nose["coverage"]
@@ -134,7 +146,7 @@ def main() -> None:
         initial = session()
         assert initial["slots"] == ["p1", "p2"] and initial["ai_slots"] == ["ai1", "ai2"]
         assert initial["senses_slots"] == ["senses1", "senses2"] and len(initial["pids"]) == 7
-        wait(lambda: all(s.get("status") == "LIVE" and s.get("readings") and s.get("olfaction_status") == "LIVE" for s in senses()), "both live sighting lists and nose samples")
+        wait(lambda: all(s.get("status") == "LIVE" and s.get("readings") and s.get("olfaction_status") == "LIVE" and s.get("scent_field", {}).get("status") == "LIVE" for s in senses()), "both live sighting lists, nose samples and host fields")
         check_bound_readings(directory, initial)
         assert read(directory / "ai2.json")["paused"], "Decision window should start paused in this driver"
         if args.graphical: native_windows(sandbox, initial)
@@ -162,7 +174,7 @@ def main() -> None:
             metrics[f"senses{i + 1}_olfaction"] = state["scent_metrics"]
             assert state["scent_metrics"]["retained"] <= 256 and state["scent_metrics"]["clock_errors"] == 0
             if args.graphical: assert state["scent_metrics"]["delivery_ms"]["p95"] <= 150, state["scent_metrics"]
-        costs = {f"senses{i + 1}": {k: s[k] for k in ("read_us_max", "update_us_max")} for i, s in enumerate(senses())}
+        costs = {f"senses{i + 1}": {k: s[k] for k in ("read_us_max", "update_us_max")} | {"scent_field": {k: s["scent_field"][k] for k in ("polls", "rebuilds", "read_us_max", "painted_cells")}} for i, s in enumerate(senses())}
         for owner in (1, 2):
             history = read(Path(initial["ai_trace_dir"]) / f"ai-{owner}.json")
             assert history["dropped_records"] == 0 and not history["writer_error"] and history["replay_status"] == "recording"
@@ -177,6 +189,10 @@ def main() -> None:
         (directory / "driver.json").write_text(json.dumps({"sequence": 1, "capture": True, "senses": True}))
         (directory / "senses-driver.json").write_text(json.dumps({"sequence": 4, "capture_only": True}))
         wait(lambda: all(read(directory / f"driver-senses{i}.json").get("sequence") == 4 for i in (1, 2)), "live captures")
+        if args.graphical:
+            for owner in (1, 2):
+                for label in ("live", "vision-local", "olfaction", "olfaction-local", "memory", "live-minimum", "olfaction-minimum", "memory-minimum", "olfaction-pinned", "olfaction-arena-stale"):
+                    assert (directory / f"senses{owner}-{label}.png").exists(), f"missing rendered capture senses{owner}-{label}.png"
         before = read(directory / "p1.json")["tick"]
         pid = initial["senses_pids"]["senses1"]
         if args.graphical:

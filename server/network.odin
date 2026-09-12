@@ -3,6 +3,7 @@ package main
 import "content"
 import "simulation"
 import "core:fmt"
+import "core:math"
 import "core:strings"
 import "core:time"
 import enet "vendor:ENet"
@@ -240,4 +241,12 @@ network_publish_audience :: proc(network: ^Network_Host) {
         }
     }
     enet.host_flush(network.host)
+}
+
+// The reset itself belongs to the simulation; the host only reports what it produced.
+dev_log_search_reset :: proc(session: ^simulation.Session) {
+    p1, p2 := session.characters[0].position, session.characters[1].position
+    delta := p1 - p2
+    distance := math.sqrt(delta.x * delta.x + delta.y * delta.y)
+    fmt.printfln("[dev] Search reset: round=%d, creature positions=%v / %v, separation=%.1f; fresh memories on next simulation tick.", session.round_id, p1, p2, distance)
 }

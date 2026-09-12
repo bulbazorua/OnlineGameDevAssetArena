@@ -24,7 +24,7 @@ for its owner filter, simulation-clock aging and lifecycle checks.
    two entity bindings. The writer updates it even if replay has reached its size
    limit. `sense_debug_collect` excludes old-round and replaced-entity records,
    and produces no readings in the lobby. It never exposes world positions.
-4. `server/dev_senses.odin` publishes `senses.json`, now schema 4, with the current
+4. `server/diagnostics/senses.odin` publishes `senses.json`, now schema 4, with the current
    projection and timing. It writes a temporary file, checks the 32 KiB ceiling
    and replaces the previous file. Consumers can miss publications without
    making a backlog. The shared queue's existing drop count remains authoritative.
@@ -40,6 +40,13 @@ for its owner filter, simulation-clock aging and lifecycle checks.
 7. `vision_sensor_view.gd` uses the same `vision_cone_geometry.gd` as the arena.
    It draws sampled positions and approximate cue wedges, without terrain,
    host rejection candidates, brain state, memory or predicted movement.
+8. Since the dev arena overview slice, the window only binds and wires pages:
+   `vision_page.gd`, `olfaction_page.gd` and `exploration_memory_panel.gd` all
+   extend `sense_page.gd` (one layout) and each instantiates the shared
+   `client/dev/ui/arena_overview.gd` frame with its own layer, while the two
+   local radar views instantiate `client/dev/ui/sensor_radar.gd`. Ownership,
+   coordinate rules and the field's separate clock are in
+   [the shared frames](dev-arena-overview.md).
 
 The display fan is a diagnostic approximation of cover, while production
 visibility still tests subjects exactly. Do not turn that fan into a new sensor

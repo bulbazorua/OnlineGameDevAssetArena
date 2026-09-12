@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import base64
 import json
+import math
 import os
 from pathlib import Path
 import shutil
@@ -57,6 +58,54 @@ def field_cells(traces: Path) -> tuple[int, int, dict]:
     for index in range(width * height):
         if any(layer[index] for layer in layers): painted += 1
     return int(value["published_us"]), painted, field
+
+
+def sample_trail(scent, timeout: float = 90) -> list[dict]:
+    """Follow the trainer while it lays its trail: one position sample every 0.2 s until the driver says done."""
+    deadline = time.monotonic() + timeout
+    samples = []
+    while time.monotonic() < deadline:
+        state = scent(1)
+        phase = state.get("trail_phase")
+        if "trainer" in state and phase in ("approach", "retreat"):
+            samples.append({"phase": phase, "position": state["trainer"], "tick": state["tick"]})
+        if phase == "done": return samples
+        time.sleep(0.2)
+    raise AssertionError("Timed out: trainer finished laying its trail")
+
+
+def human_levels(traces: Path) -> tuple[dict, list[int]]:
+    """The published field and its Human layer as bytes."""
+    value = read(traces / "scent.json")
+    field = value.get("field", {})
+    if not field.get("valid"): return field, []
+    return field, list(base64.b64decode(field["levels"][0]))
+
+
+def trail_wake(traces: Path, samples: list[dict], final: list[float]) -> dict:
+    """Human levels under the path the trainer walked, read from the host publication only."""
+    field, levels = human_levels(traces)
+    width, tile = int(field["width"]), float(field["tile_size"])
+    cells = []
+    for sample in samples:
+        cell = (int(sample["position"][0] // tile), int(sample["position"][1] // tile))
+        if cells and cells[-1]["cell"] == list(cell): continue
+        distance = math.dist(sample["position"], final) / tile
+        cells.append({"cell": list(cell), "phase": sample["phase"], "tiles_from_final": round(distance, 2), "level": levels[cell[1] * width + cell[0]]})
+    current = (int(final[0] // tile), int(final[1] // tile))
+    return {"field_tick": field["tick"], "published_us": read(traces / "scent.json")["published_us"], "cells": cells,
+            "current_cell": list(current), "current_level": levels[current[1] * width + current[0]]}
+
+
+def far_from_emitters(cell: list[int], state: dict, final: list[float], tile: float = 32, tiles: float = 3) -> bool:
+    """A walked cell that no body (trainer or creature) stands near, so only decay can change its level."""
+    centre = [(cell[0] + 0.5) * tile, (cell[1] + 0.5) * tile]
+    points = [final] + [c["position"] for c in state.get("creatures", [])]
+    return all(math.dist(centre, p) >= tiles * tile for p in points)
+
+
+def decay_candidates(wake: dict, state: dict, final: list[float]) -> list[dict]:
+    return sorted((c for c in wake["cells"] if c["level"] >= 10 and far_from_emitters(c["cell"], state, final)), key=lambda c: -c["level"])
 
 
 def smell_reading(state: dict, scent_class: str) -> dict:
@@ -118,8 +167,19 @@ def main() -> None:
                 (directory / "search-command.json").write_text(json.dumps({"sequence": 1, "slots": ["p1", "p2"]}))
                 wait(lambda: all(search(i).get("enabled") and search(i).get("readings") == 2 for i in (1, 2)), "F6 live search overlay")
                 (directory / "scent-command.json").write_text(json.dumps({"sequence": 1, "slots": ["p1"], "action": "lay_trail", "target_owner": 2}))
-                wait(lambda: scent(1).get("trail_phase") == "retreat", "trainer reached the orc and turned back", 60)
-                wait(lambda: scent(1).get("trail_phase") == "done", "trainer finished laying its trail", 30)
+                samples = sample_trail(scent)
+                assert any(s["phase"] == "retreat" for s in samples), "trainer never turned back"
+                # Moving emitter: the published field holds a wake under the path, behind the trainer's current position.
+                final = scent(1)["trainer"]
+                wait(lambda: field_cells(traces)[2].get("tick", 0) >= scent(1)["tick"] - 60, "field published after the walk")
+                wake = trail_wake(traces, samples, final)
+                behind = [c for c in wake["cells"] if c["tiles_from_final"] >= 2]
+                assert len(behind) >= 4 and wake["current_level"] > 0, wake
+                scented = [c for c in behind if c["level"] > 0]
+                assert len(scented) >= 0.8 * len(behind), f"the wake is missing under the walked path: {wake}"
+                candidates = decay_candidates(wake, scent(1), final)
+                assert candidates, f"no walked cell away from every body: {wake}"
+                wake_taken = time.monotonic()
                 wait(lambda: smell_reading(senses(2), "Human").get("strength") not in (None, "None"), "the orc smells generic human scent after the trainer left", 20)
                 reading = smell_reading(senses(2), "Human")
                 assert reading["observation_id"] >= 2 ** 31 and "position" not in reading, reading
@@ -154,12 +214,31 @@ def main() -> None:
                 published, painted, field = field_cells(traces)
                 assert field["round_id"] == scent(1)["round"] and field["width"] == 30 and field["height"] == 16, field
                 assert (traces / "scent.json").stat().st_size <= 96 * 1024
+                # Inspector minimap: both senses windows draw the same published cells, from their own bounded readers.
+                def minimap_matches():
+                    published_now, painted_now, _ = field_cells(traces)
+                    if painted_now >= 0: seen[published_now] = painted_now
+                    fields = [senses(i).get("scent_field", {}) for i in (1, 2)]
+                    return all(f.get("status") == "LIVE" and f.get("published_us") in seen and seen[f["published_us"]] == f.get("painted_cells") for f in fields)
+                wait(minimap_matches, "minimap cells equal the published field in both senses windows", 20)
+                for owner in (1, 2):
+                    field_state = senses(owner)["scent_field"]
+                    assert field_state["matches"] and field_state["width"] == 30 and field_state["height"] == 16 and 1 <= field_state["rebuilds"] <= field_state["polls"], field_state
+                # Decay as published: the strongest walked cell away from the trainer must lose level with time.
+                time.sleep(max(0.0, 12 - (time.monotonic() - wake_taken)))
+                later = trail_wake(traces, samples, final)
+                still_far = [c for c in candidates if far_from_emitters(c["cell"], scent(1), final)]
+                assert still_far, f"every walked cell gained a body nearby: {candidates}"
+                decay_cell = still_far[0]
+                later_level = next(c["level"] for c in later["cells"] if c["cell"] == decay_cell["cell"])
+                assert later["field_tick"] > wake["field_tick"] and later_level < decay_cell["level"], (decay_cell, later_level, later["field_tick"], wake["field_tick"])
+                (sandbox / "moving-emitter-trail.json").write_text(json.dumps({"samples": samples, "wake": wake, "decay_cell": decay_cell, "later_level": later_level, "later_field_tick": later["field_tick"], "seconds_between": round(time.monotonic() - wake_taken, 1), "minimap": {f"senses{i}": senses(i)["scent_field"] for i in (1, 2)}}, indent=2))
                 (sandbox / "scent-field.json").write_text(json.dumps({"published_us": published, "painted_cells": painted, "field": {k: v for k, v in field.items() if k not in ("levels", "ages")}}, indent=2))
                 if args.graphical:
                     (directory / "scent-command.json").write_text(json.dumps({"sequence": 3, "slots": ["p1"], "action": "capture", "label": "scent-heatmap"}))
                     wait(lambda: (directory / "p1-scent-heatmap.png").exists(), "rendered heatmap capture")
                     (directory / "senses-driver.json").write_text(json.dumps({"sequence": 1, "capture_only": True}))
-                    wait(lambda: all((directory / f"senses{i}-olfaction.png").exists() for i in (1, 2)), "rendered olfaction page captures")
+                    wait(lambda: all((directory / f"senses{i}-{label}.png").exists() for i in (1, 2) for label in ("olfaction", "olfaction-local", "memory", "live")), "rendered senses page captures with the trail on the arena field")
                 # F7 reset: the field and both noses start over in the new round; nothing teleports a trail.
                 previous_round = scent(1)["round"]
                 (directory / "search-command.json").write_text(json.dumps({"sequence": 2, "slots": ["p1"], "action": "reset"}))

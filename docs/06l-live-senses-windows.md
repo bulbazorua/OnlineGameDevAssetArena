@@ -69,10 +69,13 @@ peripheral controls affect its spatial drawing only; they do not change sensing.
 
 Open **Exploration memory** in either senses window to inspect that creature's
 remembered visits. This page updates even when the arena's F6 search overlay is
-off. It shows a north-up map, the creature's own recorded position, remembered
-regions and a matching table. Click a square or table row for its last occupied
-position, visit age and decay time left. Green means fresh, amber means fading,
-and a purple dot means an opponent was seen on that visit.
+off. It shows the shared north-up arena overview (the whole catalog arena as a
+developer reference outline, the same frame the Vision and Olfaction pages use),
+the creature's own recorded position, remembered regions and a matching table.
+Click a square or table row for its last occupied position, visit age and decay
+time left. Green means fresh, amber means fading, and a purple dot means an
+opponent was seen on that visit. The outline and grid are not remembered
+terrain; see [the shared frames](codebase/dev-arena-overview.md).
 
 These are places the creature actually occupied and still remembers, not a map
 of everything it has ever seen. A marked region does not mean every point inside

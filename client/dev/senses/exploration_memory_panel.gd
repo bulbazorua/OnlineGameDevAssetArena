@@ -1,68 +1,49 @@
-extends VBoxContainer
+extends "res://dev/senses/sense_page.gd"
 
+# The Exploration memory page: one creature's private remembered visits from the
+# search feed, on the shared arena frame. Its ages freeze when its source is stale.
 const Feed = preload("res://dev/search/search_feed.gd")
 const Memory = preload("res://dev/senses/exploration_memory.gd")
-const MemoryMap = preload("res://dev/senses/exploration_memory_map.gd")
+const MemoryLayer = preload("res://dev/senses/exploration_memory_layer.gd")
+const Overview = preload("res://dev/ui/arena_overview.gd")
+const READOUT_HINT := "Hover a remembered region for its visit · blank = unvisited or forgotten, not confirmed empty"
 var feed := Feed.new()
 var owner_id := 0
 var memory: Dictionary = {}
 var live_status := "WAITING"
 var selected_key := ""
 var read_us_max := 0
+var overview: Overview
+var _map: MemoryLayer
 var _next_read_ms := 0
 var _record_received_ms := 0
 var _record_key := ""
 var _world: Dictionary = {}
-var _summary: Label
-var _status: Label
-var _details: Label
-var _map: Control
-var _table: Tree
 
 
 func configure(owner: int) -> void:
 	owner_id = owner
-	size_flags_vertical = Control.SIZE_EXPAND_FILL
-	_summary = _label("Waiting for this creature's remembered visits", self, 16)
-	_status = _label("", self, 13)
-	var split := HSplitContainer.new()
-	split.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	add_child(split)
-	_map = MemoryMap.new()
-	_map.custom_minimum_size = Vector2(400, 350)
-	_map.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	_map.region_selected.connect(_select_region)
-	split.add_child(_map)
-	var column := VBoxContainer.new()
-	column.custom_minimum_size.x = 480
-	column.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	split.add_child(column)
-	_label("REMEMBERED VISITS", column, 16)
-	_table = Tree.new()
-	_table.columns = 4
-	_table.hide_root = true
-	_table.hide_folding = true
-	_table.column_titles_visible = true
-	_table.select_mode = Tree.SELECT_ROW
-	_table.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	for index in 4:
-		_table.set_column_title(index, ["Visit / region", "Age", "Strength", "Opponent seen"][index])
-		_table.set_column_custom_minimum_width(index, [135, 75, 90, 130][index])
-	_table.item_selected.connect(_selected)
-	column.add_child(_table)
-	_details = _label("Select a remembered region on the map or in the list.", column, 14)
-	_details.custom_minimum_size.y = 110
-	var legend := _label("Green = fresh · amber = fading · purple dot = opponent seen on that visit\nSquares mark visited regions; dots mark the last occupied positions.", self, 13)
-	legend.modulate = Color("a2b3c8")
+	build_layout("REMEMBERED VISITS", ["Visit / region", "Age", "Strength", "Opponent seen"], [135, 75, 90, 130])
+	overview = Overview.new()
+	overview.title = "ARENA OVERVIEW · remembered visits only"
+	overview.legend_lines = ["square = remembered region: green fresh, amber fading",
+		"dot = last occupied position · purple = opponent seen",
+		"blank = unvisited or forgotten · outline = developer reference"]
+	_map = MemoryLayer.new()
+	overview.add_layer(_map)
+	overview.pointer_pressed.connect(_pressed)
+	overview.pointer_moved.connect(_hover)
+	overview.pointer_left.connect(func(): readout.text = READOUT_HINT)
+	set_view(ARENA_VIEW, overview)
+	table.item_selected.connect(_selected)
+	summary.text = "Waiting for this creature's remembered visits"
+	timing.text = "WAITING · private exploration memory"
+	details.text = "Select a remembered region on the map or in the list."
+	readout.text = READOUT_HINT
 
 
-func _label(text: String, parent: Node, font_size: int) -> Label:
-	var label := Label.new()
-	label.text = text
-	label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	label.add_theme_font_size_override("font_size", font_size)
-	parent.add_child(label)
-	return label
+func set_arena(definition: Variant) -> void:
+	overview.set_arena(definition)
 
 
 func update_source(directory: String, run_id: String, fingerprint: String, world: Dictionary) -> void:
@@ -89,30 +70,30 @@ func _refresh_status(now: int) -> void:
 	if memory.is_empty(): live_status = "WAITING"
 	elif now - feed.updated_ms > 3000: live_status = "DISCONNECTED"
 	elif feed.stale() or now - _record_received_ms > 750: live_status = "STALE"
-	_status.text = "%s · private exploration memory" % live_status
-	if live_status in ["STALE", "DISCONNECTED"]: _status.text += " · last received data; ages are frozen"
-	elif memory.is_empty(): _status.text += " · no matching search memory yet"
-	if not feed.error.is_empty(): _status.text += " · " + feed.error
-	_status.modulate = Color("8cddb0") if live_status == "LIVE" else Color("ffb454")
+	timing.text = "%s · private exploration memory" % live_status
+	if live_status in ["STALE", "DISCONNECTED"]: timing.text += " · last received data; ages are frozen"
+	elif memory.is_empty(): timing.text += " · no matching search memory yet"
+	if not feed.error.is_empty(): timing.text += " · " + feed.error
 	_map.modulate.a = 1.0 if live_status == "LIVE" else 0.35
+	overview.set_badge(live_status if memory.is_empty() else "%s · source tick %d" % [live_status, int(memory.tick)], live_status == "LIVE")
 
 
 func _set_memory(value: Dictionary) -> void:
 	memory = value
-	var root := _table.get_root()
-	if root == null: root = _table.create_item()
+	var root := table.get_root()
+	if root == null: root = table.create_item()
 	var visits: Array = memory.get("visits", [])
 	while root.get_child_count() > visits.size(): root.get_child(root.get_child_count() - 1).free()
-	_details.text = "Select a remembered region on the map or in the list."
-	_summary.text = "No remembered visits available for this creature."
+	details.text = "Select a remembered region on the map or in the list."
+	summary.text = "No remembered visits available for this creature."
 	var selected_item: TreeItem
 	if not memory.is_empty():
-		_summary.text = "P%d · entity %d · round %d · self %s\n%d / %d regions remembered · %.0fs retention · source tick %d" % [owner_id, memory.entity_id, memory.round_id, Memory.coordinates(memory.position), memory.visits.size(), memory.capacity, memory.retention_ticks / 60.0, memory.tick]
+		summary.text = "P%d · entity %d · round %d · self %s · %d / %d regions remembered · %.0f s retention · source tick %d" % [owner_id, memory.entity_id, memory.round_id, coordinates(memory.position), memory.visits.size(), memory.capacity, memory.retention_ticks / 60.0, memory.tick]
 	for index in visits.size():
-		var item := root.get_child(index) if index < root.get_child_count() else _table.create_item(root)
+		var item := root.get_child(index) if index < root.get_child_count() else table.create_item(root)
 		_update_visit(item, visits[index])
 		if visits[index].key == selected_key: selected_item = item
-	_table.deselect_all()
+	table.deselect_all()
 	if selected_item != null:
 		selected_item.select(0)
 		_selected()
@@ -126,30 +107,47 @@ func _update_visit(item: TreeItem, visit: Dictionary) -> void:
 	item.set_text(1, "%.1fs" % (visit.age_ticks / 60.0))
 	item.set_text(2, "%.0f%%" % (visit.strength * 100))
 	item.set_text(3, "Yes, on visit" if visit.opponent_seen else "Not on visit")
-	item.set_custom_color(2, MemoryMap.FADING.lerp(MemoryMap.FRESH, visit.strength))
-	item.set_custom_color(3, MemoryMap.ENCOUNTER if visit.opponent_seen else Color.WHITE)
+	item.set_custom_color(2, MemoryLayer.FADING.lerp(MemoryLayer.FRESH, visit.strength))
+	item.set_custom_color(3, MemoryLayer.ENCOUNTER if visit.opponent_seen else Color.WHITE)
 
 
 func _select_region(key: String) -> void:
-	var item := _table.get_root().get_first_child()
+	var item := table.get_root().get_first_child()
 	while item != null:
 		if item.get_metadata(0).key == key:
 			item.select(0)
 			_selected()
-			_table.scroll_to_item(item)
+			table.scroll_to_item(item)
 			return
 		item = item.get_next()
 
 
 func _selected() -> void:
-	var item := _table.get_selected()
+	var item := table.get_selected()
 	if item == null or memory.is_empty(): return
 	var visit: Dictionary = item.get_metadata(0)
 	selected_key = visit.key
 	var remaining: float = (memory.retention_ticks - visit.age_ticks) / 60.0
-	_details.text = "Visit %d · region (%d, %d)\nLast occupied position %s\nVisited %.1fs ago · decay time left %.1fs\n%s" % [visit.number, visit.region[0], visit.region[1], Memory.coordinates(visit.position), visit.age_ticks / 60.0, remaining, "An opponent was seen on this visit." if visit.opponent_seen else "No opponent was seen on this visit. The area may still contain one."]
+	details.text = "Visit %d · region (%d, %d)\nLast occupied position %s\nVisited %.1fs ago · decay time left %.1fs\n%s" % [visit.number, visit.region[0], visit.region[1], coordinates(visit.position), visit.age_ticks / 60.0, remaining, "An opponent was seen on this visit." if visit.opponent_seen else "No opponent was seen on this visit. The area may still contain one."]
 	_map.set_memory(memory, selected_key)
 
 
+func _pressed(world: Vector2) -> void:
+	var key := _map.region_at(world)
+	if not key.is_empty(): _select_region(key)
+
+
+func _hover(world: Vector2) -> void:
+	if memory.is_empty() or not overview.contains_world(world):
+		readout.text = READOUT_HINT
+		return
+	var region: Vector2 = (world / float(memory.region_size)).floor()
+	var key := _map.region_at(world)
+	var visit := "not remembered: unvisited or forgotten"
+	for entry: Dictionary in memory.visits:
+		if entry.key == key: visit = "remembered visit #%d · %.1fs ago" % [entry.number, entry.age_ticks / 60.0]
+	readout.text = "Pointer · world (%.0f, %.0f) · region (%d, %d) · %s" % [world.x, world.y, int(region.x), int(region.y), visit]
+
+
 func debug_state() -> Dictionary:
-	return {"status": live_status, "memory": memory, "selected_key": selected_key, "read_us_max": read_us_max}
+	return {"status": live_status, "memory": memory, "selected_key": selected_key, "read_us_max": read_us_max, "legend_fits": overview.legend_fits()}

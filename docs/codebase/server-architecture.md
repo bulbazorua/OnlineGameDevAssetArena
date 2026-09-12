@@ -1,10 +1,12 @@
 # Server architecture: packages, owners and the tick
 
 Code: [`server/`](../../server) (host executable), [`server/content/`](../../server/content),
-[`server/simulation/`](../../server/simulation), [`server/ai/`](../../server/ai),
+[`server/simulation/`](../../server/simulation), [`server/diagnostics/`](../../server/diagnostics), [`server/ai/`](../../server/ai),
 [`server/perception/`](../../server/perception), [`server/observations/`](../../server/observations).
 Handback: [server refactor coding-agent report](../server-refactor-coding-agent-report.md).
 R1 correction: [R1 coding-agent report](../server-refactor-r1-coding-agent-report.md).
+Diagnostics extraction: [server diagnostics](server-diagnostics.md) and its
+[handback](../server-diagnostics-coding-agent-report.md).
 
 This is the map for finding a feature, its state owner and its execution path after the
 2026-09-12 structural refactor. Behavior, wire bytes, content digests, tuning and the
@@ -17,16 +19,18 @@ other simulation procedure is package-private.
 
 | Package | Owns | Must not know about |
 | --- | --- | --- |
-| `server` (`package main`) | Startup and options, the ENet host, packet encoding, the delayed audience history, the two brain threads, the diagnostic writer thread and its files, development scenarios. | Nothing above it; it is the top. |
+| `server` (`package main`) | Startup and options, the ENet host, packet encoding, the delayed audience history, the two brain threads, development scenarios, and the wiring that hands diagnostics its copies. | Nothing above it; it is the top. |
+| `server/diagnostics` | The developer diagnostic state: the bounded job queue, the writer thread, per-creature history, journals, the live senses/search/scent feeds and the match recording ([details](server-diagnostics.md)). | The host, ENet, the codec and the Godot viewers. It imports `simulation`, `content`, `ai`, `perception`, `observations` and `core`; the host passes it the encoded packet and the protocol version instead. |
 | `server/simulation` | The authoritative runtime: `Simulation` = public `Session` + private `Battle_Runtime`. Membership, commands, countdown, arena entry, trainers, terrain movement, receptors and sampling, the scent environment, the battle phases, action resolution, the development search reset. | Sockets, files, threads, console output, the diagnostic writer. It imports only `content`, `ai`, `perception`, `observations` and `core:math/sync/time`. |
 | `server/content` | Catalog loading and validation, definitions, baked arena rules, geometry queries, the cross-language fingerprint, allocation lifetime. | Sessions, brains, the host. It imports `perception` and `observations` for profile validity and grid types. |
 | `server/ai` | One creature's private memory and decisions on a supplied `Agent`. | Any world lookup. It imports only `observations`. |
 | `server/perception` | Privileged sensing physics: sight geometry, the scent field, the nose sampler. | Brains and sessions. It imports only `observations`. |
 | `server/observations` | The data-only evidence contract every brain may read. | Everything. |
 
-Dependency direction is one way: `main → simulation → content → perception → observations`,
-with `ai → observations` beside it. Nothing lower imports anything higher, so a
-simulation change cannot reach a socket and a brain cannot reach the map.
+Dependency direction is one way: `main → diagnostics → simulation → content → perception → observations`,
+with `ai → observations` beside it and `main → simulation` directly as well. Nothing lower
+imports anything higher, so a simulation change cannot reach a socket, a brain cannot reach
+the map, and no simulation package can reach the writer.
 
 ## Where the state lives
 
@@ -37,7 +41,7 @@ simulation change cannot reach a socket and a brain cannot reach the map.
 | Private creature runtime | `simulation.Battle_Runtime` (inside `Simulation`) | Bound by `battle_sync` per round; one slot rebinds when its entity changes ([lifecycle](battle-runtime-lifecycle.md)) | `battle_sync`, `battle_prepare_decisions` (receptor clocks, scent deposits, field steps), `battle_resolve_decisions` (adopted agents, action timing). |
 | Brain inputs and outputs | `simulation.Brain_Request` / `Brain_Response` values | One tick | Built by `battle_prepare_decisions`; answered by `brain_decide`; consumed by `battle_resolve_decisions`. Copies only: no pointer into the session, the field, the map or the other brain. |
 | Audience history | `Audience_Stream` in `server/audience.odin` | The process | `audience_advance` copies whole `Session` values on wall time. |
-| Host diagnostics | `AI_Debug` in `server/dev_ai_debug.odin` | `ai_debug_open` until `ai_debug_close`; heap-owned, never moved | The simulation thread enqueues copies; the writer thread alone serializes and writes files. |
+| Host diagnostics | `diagnostics.Diagnostics` in `server/diagnostics/` | `diagnostics.open` until `diagnostics.close`; heap-owned, never moved | The main thread enqueues copies through `record_decisions`, `capture_world` and `capture_scent`; the writer thread alone serializes and writes files ([ownership table](server-diagnostics.md#who-owns-which-field)). |
 
 Two different protections apply here. Procedure visibility is checked by the compiler: a
 `@(private)` procedure cannot be named from another package. Field visibility does not exist
@@ -52,13 +56,13 @@ These are the only simulation procedures another package can call. Everything el
 
 | Group | Public procedures | Production callers outside the package |
 | --- | --- | --- |
-| Session lifecycle | `session_join`, `session_leave`, `session_apply`, `session_start_match` | `network.odin` (join, leave, apply), `dev_scenario.odin` (start_match) |
+| Session lifecycle | `session_join`, `session_leave`, `session_apply`, `session_start_match` | `network.odin` (join, leave, apply), `scenario.odin` (start_match) |
 | Session lifecycle, test-reached | `session_reset`, `session_tick`, `session_enter_arena` | None. Production reaches them through `session_leave`/`session_apply`, `begin_tick` and `session_start_match`; the host package's tests and the vision review fixture call them on a bare `Session` |
-| Session queries | `session_player_mask`, `session_countdown_seconds` | `protocol.odin`, `dev_scenario.odin`, `network_test.odin` |
+| Session queries | `session_player_mask`, `session_countdown_seconds` | `protocol.odin`, `scenario.odin`, `network_test.odin` |
 | Fixed step | `begin_tick`, `battle_prepare_decisions`, `battle_resolve_decisions`, `advance` | `host_simulation.odin`; `advance` is also the serial reference in the host tests |
 | Fixed step, test-reached | `battle_sync` | None. `begin_tick` runs it; the host tests and the vision review fixture call it to rebind one replaced creature without ticking |
 | Brains | `brain_decide`, `decide_serially` | `brain_workers.odin`, `host_simulation.odin` |
-| Types and constants | `Simulation`, `Tick_Start`, `Session`, `Player_Slot`, `Session_Phase`, `Character`, `Trainer`, `Receptor` and its parts, `Scent_Environment`, `Battle_Runtime`, `Decision_Outcome`, `Brain_Request`, `Brain_Response`, `Client_Command`, `Message_Kind`, `Command_Reject_Reason`, `Dev_Search_Spawn`, `MAX_PLAYERS`, `SIMULATION_HZ`, the trainer and character constants | `protocol.odin`, `audience.odin`, `main.odin`, `brain_workers.odin`, `dev_*.odin` |
+| Types and constants | `Simulation`, `Tick_Start`, `Session`, `Player_Slot`, `Session_Phase`, `Character`, `Trainer`, `Receptor` and its parts, `Scent_Environment`, `Battle_Runtime`, `Decision_Outcome`, `Brain_Request`, `Brain_Response`, `Client_Command`, `Message_Kind`, `Command_Reject_Reason`, `Dev_Search_Spawn`, `MAX_PLAYERS`, `SIMULATION_HZ`, the trainer and character constants | `protocol.odin`, `audience.odin`, `main.odin`, `brain_workers.odin`, `scenario.odin`, the `diagnostics` package |
 
 The shared scenario builders in `simulation/scenario_test.odin` (`battle_test_scenario`,
 `battle_test_content_with_qa`, `scent_test_scenario`) are public so the host package's tests
@@ -97,8 +101,9 @@ brain_workers_decide | simulation.decide_serially
     both requests submitted before either answer is collected; each runs simulation.brain_decide
 simulation.battle_resolve_decisions
     adopt both decided minds, then per slot: character_resolve_intent -> ai.agent_record_result -> target alert
-ai_debug_record_decisions      host only: append the confirmed outcome to each trace and enqueue a record
-ai_debug_capture_world / ai_debug_capture_scent
+diagnostics.record_decisions   host only: append the confirmed outcome to each trace and enqueue a record
+host_capture_world             encode the session packet only when a recorder exists -> diagnostics.capture_world copies it
+diagnostics.capture_scent      quantize the field into the capture slot
 ```
 
 The indented simulation names (`scent_environment_tick`, `senses_prepare`,
@@ -117,9 +122,9 @@ marked it dirty (also during network polling), the world packet every third tick
 
 | Thread | Runs | Touches |
 | --- | --- | --- |
-| Main | Network, session, battle phases, resolution, diagnostic enqueue | Everything owned by `Simulation`; only copies leave it |
+| Main | Network, session, battle phases, resolution, diagnostic capture and enqueue | Everything owned by `Simulation`; only copies leave it |
 | Brain worker 1 and 2 (`server/brain_workers.odin`) | `simulation.brain_decide` on the mailbox copy | Its own `Brain_Request`/`Brain_Response` mailbox behind two semaphores |
-| Diagnostic writer (`server/dev_ai_debug.odin`) | JSON, journals, snapshots, replay frames, scent heatmap | The bounded job queue under its mutex, writer-owned history and the copied scent capture |
+| Diagnostic writer (`server/diagnostics/writer.odin`) | JSON, journals, snapshots, replay frames, scent heatmap | The bounded job queue under its mutex, writer-owned history and the copied scent capture |
 
 Workers are created before the first tick and joined at exit; a started worker is never
 moved or copied. The writer owns its opacity grid copies and file handles.
@@ -137,9 +142,10 @@ identical without a codec dependency. Protocol details: [protocol record](../pro
 - A new command: `simulation/commands.odin` (rule) and `server/protocol.odin` (bytes).
 - A new public field of a body: `simulation/character.odin`, then the codec and the Godot decoder.
 - A new sense: a receptor in `simulation/senses.odin`, physics in `perception`, the
-  evidence type in `observations`, memory and use in `ai`, a projection in `server/dev_*.odin`.
+  evidence type in `observations`, memory and use in `ai`, a projection in `server/diagnostics/`.
 - A new catalog or arena rule: `content`.
-- A new diagnostic file: `server/dev_*.odin` on the writer thread; capture copies on the main thread.
+- A new diagnostic file: `server/diagnostics/` on the writer thread; capture copies on the main
+  thread ([where a new output belongs](server-diagnostics.md#where-a-new-diagnostic-output-belongs)).
 - A new development-only session operation: `simulation` owns the mutation and validation;
   the host prints or publishes the result (`dev_log_search_reset` is the pattern). Keep the
   procedure `@(private)` unless the host itself must call it.
@@ -149,16 +155,18 @@ identical without a codec dependency. Protocol details: [protocol record](../pro
 | Command | What it exercises |
 | --- | --- |
 | `make build_server` | Debug host build; `odin build server -o:speed` is the release gate used by `tests/ai_debugger_check.py` |
-| `make check_session` | `odin test server/content`, `server/simulation` and `server` (host package), after `check_ai` |
-| `make check_ai_debugger` | The same three packages in `-debug` builds, then the real-worker and inspector harness |
+| `make check_session` | `odin test server/content`, `server/simulation`, `server/diagnostics` and `server` (host package), after `check_ai` |
+| `make check_ai_debugger` | The same four packages in `-debug` builds, then the real-worker and inspector harness |
 | `make check_vision_review`, `check_olfaction_review` | The Team Lead harnesses; the vision harness imports `content` and `simulation` directly |
 | `make dev_arena`, `dev_vision`, `dev_scent` | The staged launcher; every `.odin` save under `server/` (nested packages included) rebuilds the host |
 
 Test placement follows ownership: catalog and arena rules in `server/content/*_test.odin`;
 session, movement, trainers, sensing, battle, scent and search behavior in
 `server/simulation/*_test.odin` (their shared scenario builders live in
-`scenario_test.odin`, and same-package tests may exercise private helpers); anything that needs threads, the audience history, the codec or the
-diagnostic writer in `server/*_test.odin`.
+`scenario_test.odin`, and same-package tests may exercise private helpers); capture,
+projection, journal, replay-frame and scent-publication behavior in
+`server/diagnostics/*_test.odin`; anything that needs threads, the audience history, the
+codec or the host step in `server/*_test.odin`.
 
 ## File map before and after the refactor
 
@@ -176,3 +184,6 @@ Older checkpoint records name the pre-refactor files. Read them with this table.
 | `simulation.odin` (`simulation_tick`) | `simulation/simulation.odin` (`begin_tick`, `advance`) and `server/host_simulation.odin` (`host_simulation_step`) |
 | `SNAPSHOT_INTERVAL` in `movement.odin` | `server/main.odin` |
 | `content_load`, `content_destroy`, `content_character`, `content_arena`, `content_terrain`, `content_parse_extra` | `content.load`, `content.destroy`, `content.find_character`, `content.find_arena`, `content.find_terrain`, `content.parse_extra` |
+| `dev_ai_debug.odin`, `dev_replay.odin`, `dev_senses.odin`, `dev_search.odin`, `dev_scent.odin` (`AI_Debug`, `ai_debug_*`) | `diagnostics/` (`Diagnostics`, `open`, `close`, `options_valid`, `record_decisions`, `capture_world`, `capture_scent`; [rename table](server-diagnostics.md#compatibility)) |
+| `dev_log_search_reset` in `dev_search.odin` | `network.odin` |
+| `dev_scenario.odin`, `dev_scenario_test.odin` | `scenario.odin`, `scenario_test.odin` |

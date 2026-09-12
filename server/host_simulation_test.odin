@@ -2,10 +2,9 @@ package main
 
 import "simulation"
 import "content"
+import "diagnostics"
 import ai "ai"
-import obs "observations"
 import "perception"
-import "core:encoding/base64"
 import "core:encoding/json"
 import "core:fmt"
 import "core:mem"
@@ -24,9 +23,8 @@ audience_attachment_and_diagnostics_cannot_change_decisions :: proc(t: ^testing.
     b := a
     simulation.session_join(&b.session, true)
     // No writer: a full diagnostics queue also exercises non-blocking record loss.
-    debug := new(AI_Debug)
+    debug := diagnostics.test_open_without_writer()
     defer free(debug)
-    debug.origin = time.tick_now()
     stream := audience_init(5000)
     defer audience_destroy(&stream)
     audience_advance(&stream, &a.session, 0)
@@ -36,7 +34,7 @@ audience_attachment_and_diagnostics_cannot_change_decisions :: proc(t: ^testing.
         host_simulation_step(&b, &catalog, nil, debug)
         testing.expect(t, a.session.characters == b.session.characters && a.battle == b.battle)
     }
-    testing.expect(t, debug.count == AI_DEBUG_QUEUE && debug.dropped > 0)
+    testing.expect(t, diagnostics.test_queue_full(debug) && diagnostics.test_dropped(debug) > 0)
     testing.expect(t, audience_advance(&stream, &a.session, 5000 * time.Millisecond))
     testing.expect(t, stream.latest.characters == historical && stream.latest.summon_elapsed_ticks == 0)
     testing.expect(t, a.session.characters != historical, "creatures never turned")
@@ -75,58 +73,6 @@ replacing_one_creature_keeps_the_other_mind_and_the_ground_and_workers_agree :: 
 }
 
 @(test)
-scent_field_capture_matches_the_field_and_its_publication_stays_bounded :: proc(t: ^testing.T) {
-    catalog: content.Game_Content
-    map_id := simulation.battle_test_content_with_qa(t, &catalog)
-    defer content.destroy(&catalog)
-    debug := new(AI_Debug)
-    defer free(debug)
-    directory := fmt.aprintf("build/scent-debug-test-%d", sync.current_thread_id())
-    defer delete(directory)
-    testing.expect(t, os.make_directory(directory) == nil)
-    debug.directory, debug.run_id, debug.fingerprint = directory, "scent-capture", "00"
-    sim := simulation.battle_test_scenario(&catalog, map_id, 5)
-    for _ in 0..<300 { host_simulation_step(&sim, &catalog, nil, debug) }
-    capture := &debug.scent_capture
-    field := &sim.battle.scent.field
-    // The capture follows field steps (10 Hz); compare right after a tick that stepped.
-    for capture.tick != sim.session.server_tick { host_simulation_step(&sim, &catalog, nil, debug) }
-    testing.expect(t, capture.valid && capture.round_id == sim.session.round_id && capture.width == field.width && capture.height == field.height)
-    for class in obs.Scent_Class {
-        for index in 0..<field.width * field.height {
-            expected := u8(clamp(field.levels[class][index] * 255 + 0.5, 0, 255))
-            testing.expect(t, capture.levels[class][index] == expected, "captured level differs from the live field")
-        }
-    }
-    ai_debug_publish_scent(debug)
-    path := fmt.aprintf("%s/scent.json", directory)
-    defer delete(path)
-    data, error := os.read_entire_file(path, context.allocator)
-    defer delete(data)
-    testing.expect(t, error == nil && len(data) <= SCENT_DEBUG_BYTES)
-    temporary: mem.Dynamic_Arena
-    mem.dynamic_arena_init(&temporary)
-    defer mem.dynamic_arena_destroy(&temporary)
-    snapshot: Scent_Debug_Snapshot
-    testing.expect(t, json.unmarshal(data, &snapshot, allocator = mem.dynamic_arena_allocator(&temporary)) == nil)
-    testing.expect(t, snapshot.schema_version == SCENT_DEBUG_SCHEMA && snapshot.field.valid && len(snapshot.field.levels) == 2 && snapshot.field.classes[0] == "Human")
-    decoded, decode_error := base64.decode(snapshot.field.levels[0], allocator = mem.dynamic_arena_allocator(&temporary))
-    testing.expect(t, decode_error == nil && len(decoded) == field.width * field.height)
-    for index in 0..<len(decoded) { testing.expect(t, decoded[index] == capture.levels[.Human][index]) }
-    // The widest accepted field still fits the declared ceiling.
-    capture.width, capture.height = perception.MAX_GRID_SIDE, perception.MAX_GRID_SIDE
-    for class in obs.Scent_Class { for index in 0..<perception.MAX_GRID_CELLS { capture.levels[class][index], capture.ages[class][index] = 255, 255 } }
-    ai_debug_publish_scent(debug)
-    widest, widest_error := os.read_entire_file(path, context.allocator)
-    defer delete(widest)
-    testing.expect(t, widest_error == nil && len(widest) <= SCENT_DEBUG_BYTES && len(widest) > 80 * 1024)
-    // Leaving the arena invalidates the capture instead of showing an old field.
-    simulation.session_reset(&sim.session)
-    host_simulation_step(&sim, &catalog, nil, debug)
-    testing.expect(t, !debug.scent_capture.valid)
-}
-
-@(test)
 delivered_coverage_reaches_diagnostics_without_a_map :: proc(t: ^testing.T) {
     catalog: content.Game_Content
     map_id := simulation.battle_test_content_with_qa(t, &catalog)
@@ -142,10 +88,10 @@ delivered_coverage_reaches_diagnostics_without_a_map :: proc(t: ^testing.T) {
         directory := fmt.aprintf("build/scent-coverage-test-%d", sync.current_thread_id())
         defer delete(directory)
         testing.expect(t, os.make_directory(directory) == nil)
-        debug := ai_debug_open(directory, "coverage-run", catalog.fingerprint, &catalog, seed = 42)
+        debug := diagnostics.open(directory, "coverage-run", catalog.fingerprint, int(PROTOCOL_HEADER[4]), &catalog, seed = 42)
         for _ in 0..<30 { host_simulation_step(&sim, &catalog, nil, debug) }
         latest := sim.battle.receptors[0].olfaction.last
-        ai_debug_close(debug)
+        diagnostics.close(debug)
         temporary: mem.Dynamic_Arena
         mem.dynamic_arena_init(&temporary)
         defer mem.dynamic_arena_destroy(&temporary)
@@ -153,10 +99,10 @@ delivered_coverage_reaches_diagnostics_without_a_map :: proc(t: ^testing.T) {
         defer delete(snapshot_path)
         data, error := os.read_entire_file(snapshot_path, context.allocator)
         defer delete(data)
-        snapshot: AI_Debug_Snapshot
+        snapshot: diagnostics.Snapshot
         testing.expect(t, error == nil && json.unmarshal(data, &snapshot, allocator = mem.dynamic_arena_allocator(&temporary)) == nil && len(snapshot.records) > 0)
         record := snapshot.records[len(snapshot.records) - 1]
-        testing.expect(t, snapshot.schema_version == AI_DEBUG_SCHEMA && record.input.senses.olfaction.coverage == latest.coverage && record.host_scent_audit.cells_excluded > 0)
+        testing.expect(t, snapshot.schema_version == diagnostics.TRACE_SCHEMA && record.input.senses.olfaction.coverage == latest.coverage && record.host_scent_audit.cells_excluded > 0)
         text := string(data)
         brain_side := text[:strings.index(text, "\"host_audit\"")]
         testing.expect(t, strings.contains(brain_side, "\"coverage\"") && !strings.contains(brain_side, "cells_excluded") && !strings.contains(brain_side, "newest_detectable"), "the audit must stay outside the brain input")
@@ -164,9 +110,9 @@ delivered_coverage_reaches_diagnostics_without_a_map :: proc(t: ^testing.T) {
         defer delete(senses_path)
         live, live_error := os.read_entire_file(senses_path, context.allocator)
         defer delete(live)
-        senses: Sense_Debug_Snapshot
+        senses: diagnostics.Sense_Snapshot
         testing.expect(t, live_error == nil && json.unmarshal(live, &senses, allocator = mem.dynamic_arena_allocator(&temporary)) == nil)
-        testing.expect(t, senses.schema_version == SENSE_DEBUG_SCHEMA && len(senses.records) == 2 && senses.records[0].olfaction.coverage == latest.coverage)
+        testing.expect(t, senses.schema_version == diagnostics.SENSE_SCHEMA && len(senses.records) == 2 && senses.records[0].olfaction.coverage == latest.coverage)
     }
 }
 
@@ -182,9 +128,8 @@ search_workers_match_serial_with_trace_loss_and_private_entity_lifecycle :: proc
     defer free(workers)
     brain_workers_init(workers)
     defer brain_workers_destroy(workers)
-    debug := new(AI_Debug)
+    debug := diagnostics.test_open_without_writer()
     defer free(debug)
-    debug.origin = time.tick_now()
     for tick in 0..<2400 {
         simulation.advance(&a, &catalog)
         host_simulation_step(&b, &catalog, workers, debug)
@@ -204,7 +149,7 @@ search_workers_match_serial_with_trace_loss_and_private_entity_lifecycle :: proc
             testing.expect(t, !a.session.characters[0].target_alert && a.session.characters[0].target_acquired_tick == 0 && a.session.characters[1] == kept_character)
         }
     }
-    testing.expect(t, debug.dropped > 0 && workers.slots[0].response.worker_id != workers.slots[1].response.worker_id)
+    testing.expect(t, diagnostics.test_dropped(debug) > 0 && workers.slots[0].response.worker_id != workers.slots[1].response.worker_id)
     simulation.session_reset(&a.session)
     simulation.advance(&a, &catalog)
     testing.expect(t, a.battle == simulation.Battle_Runtime{})

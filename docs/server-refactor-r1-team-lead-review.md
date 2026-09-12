@@ -6,7 +6,7 @@ Status: **ACCEPTED. R1 is closed.** The content/simulation refactor is accepted
 within the agreed scope, with the nonblocking documentation note below. This does
 not authorize the proposed diagnostics extraction or other follow-on changes.
 
-Assignment: [R1 delegation](delegation.md). Agent handback:
+Assignment: [R1 delegation](server-refactor-r1-delegation.md). Agent handback:
 [R1 report](server-refactor-r1-coding-agent-report.md). The
 [original independent review](server-refactor-team-lead-review.md) remains the
 historical record of the finding and the earlier verification.

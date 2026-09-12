@@ -111,10 +111,18 @@ OnlineGameDevAssetArena/
 │   ├── network.odin                ENet lifecycle, command dispatch and session updates
 │   ├── protocol.odin               Version 11 packet codec over simulation types
 │   ├── audience.odin               Shared bounded spectator history and timed release
-│   ├── dev_scenario.odin           Debug-only canonical scenario and automatic entry
-│   ├── dev_ai_debug.odin           Bounded queue, rotating journals, atomic snapshots, decision records
-│   ├── dev_replay.odin / dev_senses.odin / dev_search.odin / dev_scent.odin  Writer-thread projections and the recording
-│   ├── *_test.odin                 Host-level tests: codec bytes, network membership, audience, workers, serial/threaded equivalence
+│   ├── scenario.odin               Debug-only canonical scenario and automatic entry
+│   ├── *_test.odin                 Host-level tests: codec bytes, network membership, audience, workers, serial/threaded equivalence, diagnostics seam
+│   ├── diagnostics/                Developer diagnostic writer and feeds (package diagnostics); see docs/codebase/server-diagnostics.md
+│   │   ├── diagnostics.odin        Diagnostics state, launch gate, open/close, decision recording
+│   │   ├── queue.odin              Copied jobs, drop-when-full queue
+│   │   ├── record.odin             Record and its JSON view, writer-side fan cache, delivery clocks
+│   │   ├── writer.odin             Writer thread loop, drain, publication cadence
+│   │   ├── journal.odin            Rotating ai-N.jsonl journals and ai-N.json snapshots
+│   │   ├── replay.odin             World capture from the host packet, match.replay.jsonl
+│   │   ├── senses.odin / search.odin / scent.odin  senses.json, search.json, scent.json feeds and the scent capture slot
+│   │   ├── probe_test.odin         Test-only construction and inspection used by host tests
+│   │   └── *_test.odin             Projection, journal ceilings, scent capture, packet copy, queue and option tests
 │   ├── content/                    Catalogs and static arenas (package content)
 │   │   ├── catalog.odin            Game_Content, load/destroy, fingerprint, character parsing
 │   │   ├── characters.odin         Character_Definition
@@ -236,7 +244,7 @@ Open **`client/project.godot`** in Godot. The `client/` directory is the Godot p
 
 `server/main.odin` owns startup, network polling, and the fixed 60 Hz loop; each step is `host_simulation_step`. `network.odin` handles connections and calls the command rules in `simulation/commands.odin`; `protocol.odin` owns packet encoding. Two fighter slots are independent of audience connections. The `content` package validates shared character, terrain, sense and arena catalogs before listening. Players receive live membership/selection state; audience receives historical state through `Audience_Stream`, at the configured delay.
 
-The `simulation` package owns the authoritative runtime: `simulation/session.odin` holds runtime characters, the countdown, spawning and trainer movement, and `Simulation` owns the private `Battle_Runtime` alongside the public session. `brain_workers.odin` runs each creature's AI on its own thread with copied input/state; the host applies returned intents through `simulation/character_actions.odin`. `dev_ai_debug.odin` exports optional private traces on a separate writer thread. Odin organizes packages by directory, so several `.odin` files in one package share declarations. [Odin packages](https://odin-lang.org/docs/overview/#packages) The owners, the tick and the thread map are in [server architecture](codebase/server-architecture.md).
+The `simulation` package owns the authoritative runtime: `simulation/session.odin` holds runtime characters, the countdown, spawning and trainer movement, and `Simulation` owns the private `Battle_Runtime` alongside the public session. `brain_workers.odin` runs each creature's AI on its own thread with copied input/state; the host applies returned intents through `simulation/character_actions.odin`. The `diagnostics` package (`server/diagnostics/`) exports optional private traces on a separate writer thread. Odin organizes packages by directory, so several `.odin` files in one package share declarations. [Odin packages](https://odin-lang.org/docs/overview/#packages) The owners, the tick and the thread map are in [server architecture](codebase/server-architecture.md).
 
 The server connects to clients through network messages. Its simulation code owns the accepted game state, as described in the [message-flow example](00-odin-server-godot-client.md).
 
@@ -276,7 +284,8 @@ The root `Makefile` provides the entry point for both programs:
 | `make ai_debugger P1=archer P2=orc` | Launch the arena and two separate AI tree/timeline/replay inspectors |
 | `make dev_vision P1=archer P2=orc` | Launch the staged close-quarters vision QA arena with both inspectors |
 | `make dev_scent P1=archer P2=orc` | Launch the staged scent-trail QA arena; F8 toggles the host scent heatmap |
-| `make check_scent` | Check scent trails, Olfaction pages, host heatmap, saved filters, reset and recorded olfaction |
+| `make check_scent` | Check scent trails, Olfaction pages, host heatmap, minimap, moving-emitter wake and decay, saved filters, reset and recorded olfaction |
+| `make check_arena_overview` | Check the shared dev arena overview, radar frames and pages headless, then render the real pages at both window sizes (needs a display) |
 | `make check_vision` | Run the perception geometry, AI memory/attention, host vision suites and the independent vision review checks |
 | `make check_vision_review` | Run the Team Lead vision regression checks in normal and debug builds |
 | `make check_olfaction_review` | Run the Team Lead olfaction regressions and the coverage fixtures in normal and debug builds, then render both coverage probes (needs a display) |
@@ -327,7 +336,7 @@ and longer deliberation will extend this harness; neither is simulated by the UI
 
 [Checkpoint 6A.2](06e-qa-replay-and-trace-browsing.md) adds a virtual timeline,
 background parsing, shared downward decision graphs and a separate match replay
-window. `server/dev_replay.odin` records the host's public state plus matching traces;
+window. `server/diagnostics/replay.odin` (formerly `dev_replay.odin`) records the host's public state plus matching traces;
 the viewer samples existing rendering resources at the selected tick without running
 AI or connecting to a match. Deterministic re-simulation remains planned.
 
@@ -340,9 +349,9 @@ Player1 walk preparation and prediction are described in [Player1 walk timing](0
 
 ## Arena senses overlay
 
-[The arena overlay slice](06k-arena-sense-overlay.md) adds `server/dev_senses.odin` for the writer-owned latest-sample projection, `client/dev/sense_feed.gd` for bounded local reads, `vision_cone_geometry.gd` for the clipped fields, and `sense_overlay.gd` for arena drawing. The existing debug UI groups these separately from physical colliders. `tests/sense_overlay_check.gd` verifies the slice. [Ownership and timing](codebase/arena-sense-overlay.md) are documented separately from the [live senses windows](06l-live-senses-windows.md).
+[The arena overlay slice](06k-arena-sense-overlay.md) adds `server/dev_senses.odin` (now `server/diagnostics/senses.odin`) for the writer-owned latest-sample projection, `client/dev/sense_feed.gd` for bounded local reads, `vision_cone_geometry.gd` for the clipped fields, and `sense_overlay.gd` for arena drawing. The existing debug UI groups these separately from physical colliders. `tests/sense_overlay_check.gd` verifies the slice. [Ownership and timing](codebase/arena-sense-overlay.md) are documented separately from the [live senses windows](06l-live-senses-windows.md).
 
-The live companions use `client/dev/senses/senses_window.tscn` and its controller, `vision_readings.gd` for current-only row projection, `vision_sensor_view.gd` for the spatial view, and `display_metrics.gd` for bounded timing samples. `server/dev_senses_test.odin` covers projection lifecycle and delivery timestamps. `tests/senses_windows_check.py` with `tests/senses_window_driver.gd` verifies six-window operation, uncertainty, stale recovery, closure, reload and display latency. See the [deep dive](codebase/live-senses-inspector.md).
+The live companions use `client/dev/senses/senses_window.tscn` and its controller, `vision_readings.gd` for current-only row projection, `vision_sensor_view.gd` for the spatial view, and `display_metrics.gd` for bounded timing samples. `server/diagnostics/senses_test.odin` (formerly `server/dev_senses_test.odin`) covers projection lifecycle and delivery timestamps. `tests/senses_windows_check.py` with `tests/senses_window_driver.gd` verifies six-window operation, uncertainty, stale recovery, closure, reload and display latency. See the [deep dive](codebase/live-senses-inspector.md).
 
 ## Trainer running and target reactions
 
@@ -364,8 +373,9 @@ ground shadow; `CharacterView` applies the lift and positions the head marker.
 - `server/scent_environment.odin`: emitters, deposits and field steps inside `Battle_Runtime`; `server/senses.odin` now holds per-sense receptors with a shared schedule gate.
 - `server/content_senses.odin` (senses schema 2), `server/arena.odin` (terrain schema 3 scent media), `client/content/sense_catalog.gd`, `arena_catalog.gd`.
 - `server/ai/scent_memory.odin`, `search_scent.odin`, `scent_memory_test.odin`: private scent memory, own-trail discounting and scent-driven search transitions.
-- `server/dev_scent.odin`: quantized field capture and `scent.json`; `dev_senses.odin` schema 4, `dev_search.odin` schema 2, trace schema 5, replay envelope 5; `server/scent_battle_test.odin`.
-- `client/dev/senses/olfaction_readings.gd`, `olfaction_sensor_view.gd`: the Olfaction page, drawing measured, partly measured and unknown ground apart; `client/dev/scent_feed.gd`, `scent_overlay.gd`, `window_preferences.gd`: the F8 host heatmap and its saved filters.
+- `server/diagnostics/scent.odin` (formerly `server/dev_scent.odin`): quantized field capture and `scent.json`; `diagnostics/senses.odin` schema 4, `diagnostics/search.odin` schema 2, trace schema 5, replay envelope 5; `server/scent_battle_test.odin`.
+- `client/dev/senses/olfaction_readings.gd`, `olfaction_sensor_view.gd`: the Olfaction page, drawing measured, partly measured and unknown ground apart; `client/dev/scent_feed.gd`, `scent_field_image.gd`, `scent_overlay.gd`, `window_preferences.gd`: the shared field painter, the F8 host heatmap and its saved filters.
+- `client/dev/ui/dev_ui_style.gd`, `arena_overview.gd`, `sensor_radar.gd`: the shared dev UI palette, the whole-arena frame and the local radar frame; `client/dev/senses/sense_page.gd`, `vision_page.gd`, `olfaction_page.gd`, `vision_arena_layer.gd`, `scent_field_layer.gd`, `exploration_memory_layer.gd`: one page layout, the three page controllers and their arena layers ([deep dive](codebase/dev-arena-overview.md)); `tests/dev_arena_overview_check.gd`, `dev_arena_overview_render_check.gd`, `dev_arena_fixtures.gd`: headless contract checks and the rendered page probe (`make check_arena_overview`).
 - `client/dev/fixtures/content/scent_trail.arenas.json`, `tests/scent_check.py`, `scent_client_driver.gd`, `scent_replay_check.gd`: the scent QA arena and integration harness.
 - `tests/olfaction_review/` (Team Lead-owned), `tests/olfaction_coverage/`, `tools/measure_peak_memory.py`: independent regressions, rendered coverage probes and the six-window peak-memory measurement.
 
@@ -375,11 +385,11 @@ See [the feature record](06n-olfactory-trails.md) and [ownership deep dive](code
 
 - `server/ai/search*.odin`: private search profiles, evidence handling, decaying visit history, local steering and behavior tests.
 - `server/search_battle_test.odin`: real-map exploration, privacy, dedicated-worker equivalence and lifecycle checks.
-- `server/dev_search.odin`: latest-only private search projection for development.
+- `server/diagnostics/search.odin` (formerly `server/dev_search.odin`): latest-only private search projection for development.
 - `server/dev_search_reset.odin`: host-only safe placement and fresh-round reset; `dev_search_reset_test.odin` covers separation, lifecycle, rejected resets and development gates.
 - `client/dev/search/`: saved preferences, validated feed, arena drawing, readable scores and recorded Search tab.
 - `client/dev/search/search_reset_control.gd`: reset button, host confirmation and failure feedback; F7 routes here from the development overlay.
-- `client/dev/senses/exploration_memory.gd`, `exploration_memory_panel.gd`, `exploration_memory_map.gd`: owner-filtered visit projection, live memory tab and clickable map. Uses the existing search feed independently of F6; no world-map query or decision-history loading.
+- `client/dev/senses/exploration_memory.gd`, `exploration_memory_panel.gd`, `exploration_memory_layer.gd`: owner-filtered visit projection, live memory page on the shared arena frame and its clickable layer. Uses the existing search feed independently of F6; no world-map query or decision-history loading.
 - `tests/exploration_memory_check.gd`: private display data, decay, selection and lifecycle checks; the search integration verifies both live memory windows against private journals and across reset.
 - `client/characters/target_alert.gd`, `client/presentation/target_acquired.tres`: public acquisition presentation and replaceable pixel asset.
 - `tests/search_check.py`, `search_client_driver.gd`, `search_ai_driver.gd`, `search_replay_check.gd`: native/headless integration, actual restart persistence and recorded markers.

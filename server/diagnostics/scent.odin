@@ -1,8 +1,8 @@
-package main
+package diagnostics
 
-import "simulation"
-import obs "observations"
-import "perception"
+import "../simulation"
+import obs "../observations"
+import "../perception"
 import "core:encoding/base64"
 import "core:encoding/json"
 import "core:fmt"
@@ -10,13 +10,14 @@ import "core:os"
 import "core:sync"
 import "core:time"
 
-SCENT_DEBUG_SCHEMA :: 1
+SCENT_SCHEMA :: 1
 // Two classes, two layers, up to 16,384 cells each, base64 encoded: about 88 KiB.
-SCENT_DEBUG_BYTES :: 96 * 1024
+@(private) SCENT_BYTES :: 96 * 1024
 
 // A quantized copy of the host field for the developer heatmap. Filled on the
 // simulation thread after a field step; read by the writer under the mutex.
-Scent_Debug_Capture :: struct {
+@(private)
+Scent_Capture :: struct {
     valid: bool,
     round_id, tick: u32,
     map_id: u16,
@@ -26,7 +27,7 @@ Scent_Debug_Capture :: struct {
     ages: [obs.Scent_Class][perception.MAX_GRID_CELLS]u8,   // Whole seconds since the newest deposit, capped at 255.
 }
 
-Scent_Debug_Field :: struct {
+Scent_Field :: struct {
     valid: bool,
     round_id, tick: u32,
     map_id: u16,
@@ -38,17 +39,17 @@ Scent_Debug_Field :: struct {
     ages: []string,
 }
 
-Scent_Debug_Snapshot :: struct {
+Scent_Snapshot :: struct {
     schema_version: int,
     run_id, fingerprint: string,
     published_us: i64,
-    world: Sense_Debug_World,
-    field: Scent_Debug_Field,
+    world: Sense_World,
+    field: Scent_Field,
 }
 
-// Copy the field into the capture slot when it changed. A memcpy-sized lock,
-// no JSON, no file work on the simulation thread; nothing is read back.
-ai_debug_capture_scent :: proc(debug: ^AI_Debug, battle: ^simulation.Battle_Runtime, session: ^simulation.Session) {
+// Main thread: copy the field into the capture slot when it changed. A memcpy-sized
+// lock, no JSON, no file work on the simulation thread; nothing is read back.
+capture_scent :: proc(debug: ^Diagnostics, battle: ^simulation.Battle_Runtime, session: ^simulation.Session) {
     if debug == nil { return }
     field := &battle.scent.field
     active := session.phase == .In_Arena && battle.bound && perception.scent_field_valid(field)
@@ -73,8 +74,9 @@ ai_debug_capture_scent :: proc(debug: ^AI_Debug, battle: ^simulation.Battle_Runt
 }
 
 // Writer thread: publish the latest capture as scent.json for the arena heatmap.
-ai_debug_publish_scent :: proc(debug: ^AI_Debug) {
-    capture := new(Scent_Debug_Capture)
+@(private)
+publish_scent :: proc(debug: ^Diagnostics) {
+    capture := new(Scent_Capture)
     defer free(capture)
     sync.mutex_lock(&debug.scent_mutex)
     capture^ = debug.scent_capture
@@ -82,7 +84,7 @@ ai_debug_publish_scent :: proc(debug: ^AI_Debug) {
     classes := [obs.SCENT_CLASS_COUNT]string{"Human", "Orc"}
     levels, ages: [obs.SCENT_CLASS_COUNT]string
     defer for index in 0..<obs.SCENT_CLASS_COUNT { delete(levels[index]); delete(ages[index]) }
-    field := Scent_Debug_Field{valid = capture.valid, step_ticks = perception.SCENT_STEP_TICKS, classes = classes[:]}
+    field := Scent_Field{valid = capture.valid, step_ticks = perception.SCENT_STEP_TICKS, classes = classes[:]}
     if capture.valid {
         cells := capture.width * capture.height
         for class, index in obs.Scent_Class {
@@ -93,14 +95,14 @@ ai_debug_publish_scent :: proc(debug: ^AI_Debug) {
         field.width, field.height, field.tile_size = capture.width, capture.height, capture.tile_size
         field.levels, field.ages = levels[:], ages[:]
     }
-    snapshot := Scent_Debug_Snapshot{SCENT_DEBUG_SCHEMA, debug.run_id, debug.fingerprint, i64(time.tick_since(debug.origin) / time.Microsecond), debug.sense_world, field}
+    snapshot := Scent_Snapshot{SCENT_SCHEMA, debug.run_id, debug.fingerprint, i64(time.tick_since(debug.origin) / time.Microsecond), debug.sense_world, field}
     data, error := json.marshal(snapshot, {use_enum_names = true})
-    if error != nil { ai_debug_error(debug, "Cannot serialize scent field"); return }
+    if error != nil { report_error(debug, "Cannot serialize scent field"); return }
     defer delete(data)
-    if len(data) > SCENT_DEBUG_BYTES { ai_debug_error(debug, "Scent field exceeded the size limit"); return }
+    if len(data) > SCENT_BYTES { report_error(debug, "Scent field exceeded the size limit"); return }
     path := fmt.aprintf("%s/scent.json", debug.directory)
     defer delete(path)
     temporary := fmt.aprintf("%s.tmp", path)
     defer delete(temporary)
-    if os.write_entire_file(temporary, data) != nil || os.rename(temporary, path) != nil { ai_debug_error(debug, "Cannot publish scent field") }
+    if os.write_entire_file(temporary, data) != nil || os.rename(temporary, path) != nil { report_error(debug, "Cannot publish scent field") }
 }

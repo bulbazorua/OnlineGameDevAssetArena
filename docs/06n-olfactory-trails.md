@@ -162,6 +162,21 @@ status and its own delivery clock, so a fresh eye sample never makes an old
 smell look current. A paused decision debugger does not pause it. The page
 holds no logs, traces or replay controls.
 
+The page's canvas has two views behind one control: **Local sensor** is the
+nose picture above, and **Arena overview** (the default) is the shared whole-
+arena frame with the host's published scent field drawn on it, titled **HOST
+SCENT FIELD · developer-only world data, not what this creature knows**. It
+shows the wake behind a moving emitter exactly as published (class colours on a
+fixed level scale, never per-frame normalised), the nose's sampled reach ring
+labelled with its sample number, and a readout for the hovered cell; clicking a
+cell pins its per-class level (0–255 of saturation) and age (whole seconds since
+the newest deposit, capped at 255) under the reading details. The field has its
+own reader, throttle and LIVE / STALE / DISCONNECTED / WAITING badge, separate
+from the nose sample's clock, and a field for another round, map or size is
+never drawn. Its class filters are page-local and save nothing. The same
+`scent_field_image.gd` painter builds the F8 heatmap and this minimap, so both
+show the same cells. See [the shared frames](codebase/dev-arena-overview.md).
+
 The arena's **F4** panel gains a **Senses · Olfaction** group: **Host scent
 field [F8]**, Human scent, Orc scent, Smell range P1 and Smell range P2. The
 heatmap draws the actual published field as one pixel per cell under the

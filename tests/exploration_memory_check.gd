@@ -53,7 +53,7 @@ func _run() -> void:
 	panel._set_memory(own)
 	panel._select_region(own.visits[1].key)
 	assert(panel.selected_key == own.visits[1].key and panel._map.selected_key == panel.selected_key)
-	assert("(150.0, 110.0)" in panel._details.text)
+	assert("(150.0, 110.0)" in panel.details.text)
 	panel.feed.error = ""
 	panel.feed.updated_ms = Time.get_ticks_msec()
 	panel._record_received_ms = panel.feed.updated_ms
@@ -66,7 +66,7 @@ func _run() -> void:
 	panel.feed.world = world
 	panel.feed.records = records
 	panel.update_source("user://missing-memory-fixture", "fixture", "fixture", replacement)
-	assert(panel.memory.is_empty() and panel.selected_key.is_empty() and panel._table.get_root().get_child_count() == 0)
+	assert(panel.memory.is_empty() and panel.selected_key.is_empty() and panel.table.get_root().get_child_count() == 0)
 	panel.queue_free()
 	await process_frame
 	print("PASS: private exploration projection, bounded visits, decay, tick wrap, selection, frozen stale ages and lifecycle clearing.")

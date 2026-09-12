@@ -8,9 +8,9 @@ of that same sample, without loading hundreds of decisions into every game windo
 1. Production sensing builds the filtered sample and the existing brain consumes
    it. Neither sensing nor decision scheduling changed for this overlay.
 2. The existing telemetry queue transfers a value record to the host's writer.
-   `ai_debug_attach_fan` computes/caches display geometry there using that sample's
+   `attach_fan` in `server/diagnostics/record.odin` computes/caches display geometry there using that sample's
    pose and profile. The writer already does this for debugger and replay records.
-3. `server/dev_senses.odin` projects the latest writer-owned record for each owner
+3. `server/diagnostics/senses.odin` projects the latest writer-owned record for each owner
    into a small snapshot. Only identity, source tick, vision and its display fan
    survive. Serialization and atomic replacement happen on the writer thread.
 4. `tools/dev_session.py` supplies the current trace directory/run binding to

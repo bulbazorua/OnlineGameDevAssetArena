@@ -4,7 +4,7 @@ Code: [`server/perception/scent_field.odin`](../../server/perception/scent_field
 [`server/perception/olfaction.odin`](../../server/perception/olfaction.odin),
 [`server/simulation/scent_environment.odin`](../../server/simulation/scent_environment.odin),
 [`server/simulation/senses.odin`](../../server/simulation/senses.odin), [`server/ai/scent_memory.odin`](../../server/ai/scent_memory.odin),
-[`server/ai/search_scent.odin`](../../server/ai/search_scent.odin), [`server/dev_scent.odin`](../../server/dev_scent.odin),
+[`server/ai/search_scent.odin`](../../server/ai/search_scent.odin), [`server/diagnostics/scent.odin`](../../server/diagnostics/scent.odin),
 [`client/dev/senses/olfaction_sensor_view.gd`](../../client/dev/senses/olfaction_sensor_view.gd),
 [`client/dev/scent_overlay.gd`](../../client/dev/scent_overlay.gd). Behavior record:
 [6B.2 olfactory trails](../06n-olfactory-trails.md). Package map: [server architecture](server-architecture.md).
@@ -16,7 +16,7 @@ configuration            senses.json profile -> Character_Definition.olfaction /
 scheduled measurement    Receptor.olfaction (Olfaction_Receptor: profile, Receptor_Schedule, last, audit)
 private observation      obs.Scent_Sample inside obs.Sense_Input, with olfaction_is_new
 brain input              ai.Decision_Context.senses + own_emitter -> Scent_Memory -> Search_Runtime.scent
-diagnostic projection    dev_senses.odin (senses.json), dev_search.odin (search.json), dev_scent.odin (scent.json)
+diagnostic projection    diagnostics/senses.odin (senses.json), diagnostics/search.odin (search.json), diagnostics/scent.odin (scent.json)
 recorded evidence        AI_Debug_Record.input / before / after / scent_audit -> trace schema 4 -> replay envelope 4
 ```
 
@@ -146,7 +146,7 @@ its `observed_tick` moves.
 
 Both receptors of one creature sample from the same frozen phase, but each has
 its own `Receptor_Schedule`. `Sense_Input` carries `vision_is_new` and
-`olfaction_is_new` separately; `ai_debug_note_delivery` keeps one delivery clock
+`olfaction_is_new` separately; `diagnostics` `note_delivery` keeps one delivery clock
 per sense per owner, so a new smell never refreshes the eye's clock.
 
 ## The brain side
@@ -172,17 +172,21 @@ branch never relabels it as a remembered cue, and `search_choose_heading` uses
 
 ## Diagnostics
 
-`dev_senses.odin` (schema 3) adds the nose sample, its delivery time and the
-owner's emitter to each live record. `dev_search.odin` (schema 2) publishes the
-runtime with its scent evidence. `dev_scent.odin` is the only reader of the
-field outside the simulation: `ai_debug_capture_scent` copies a quantized field
+`diagnostics/senses.odin` (schema 3) adds the nose sample, its delivery time and the
+owner's emitter to each live record. `diagnostics/search.odin` (schema 2) publishes the
+runtime with its scent evidence. `diagnostics/scent.odin` is the only reader of the
+field outside the simulation: `diagnostics.capture_scent` copies a quantized field
 into a mutex-guarded slot on the simulation thread whenever a field step or
 round changed (a memcpy-sized critical section, no JSON), and the writer thread
 publishes `scent.json` every 100 ms with base64 level and age layers per class.
 The client `scent_feed.gd` validates identity and layer sizes, and
-`scent_overlay.gd` paints one pixel per cell into a texture whenever the
-publication or the class filters change. The heatmap therefore shows exactly
-the published field; it never queries emitter positions or invents deposits.
+`scent_field_image.gd` paints one pixel per cell into a texture whenever the
+field tick or the class filters change (a republished identical tick keeps the
+image). `scent_overlay.gd` draws that image under the actors for F8, and the
+Olfaction page's arena view draws the same painter's image on the shared arena
+frame from its own reader ([shared frames](dev-arena-overview.md)). Both
+therefore show exactly the published field; neither queries emitter positions
+nor invents deposits.
 
 The Olfaction page (`olfaction_readings.gd`, `olfaction_sensor_view.gd`) first
 draws the sample's coverage and only then the readings: a `Sampled` zone gets the
@@ -204,7 +208,7 @@ debugger and replay lines say "coverage not recorded".
 
 The writer thread processes every queued job in one pass and, when it publishes
 the two 80-record history snapshots every 250 ms, it catches up on the queue
-between the two owners' snapshots (`ai_debug_drain`). A fresh eye or nose
+between the two owners' snapshots (`drain_queue` in `diagnostics/writer.odin`). A fresh eye or nose
 sample therefore waits behind at most one snapshot serialization, not both,
 which keeps the delivery-to-display clock of the 5 Hz Olfaction page inside
 the 150 ms target without touching sensor rates.
