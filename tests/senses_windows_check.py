@@ -148,6 +148,8 @@ def main() -> None:
         assert initial["senses_slots"] == ["senses1", "senses2"] and len(initial["pids"]) == 7
         wait(lambda: all(s.get("status") == "LIVE" and s.get("readings") and s.get("olfaction_status") == "LIVE" and s.get("scent_field", {}).get("status") == "LIVE" for s in senses()), "both live sighting lists, nose samples and host fields")
         check_bound_readings(directory, initial)
+        for state in senses():
+            check_arena_overview(state)
         assert read(directory / "ai2.json")["paused"], "Decision window should start paused in this driver"
         if args.graphical: native_windows(sandbox, initial)
         (directory / "senses-driver.json").write_text(json.dumps({"sequence": 1}))

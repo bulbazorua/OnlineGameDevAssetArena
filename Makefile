@@ -157,7 +157,7 @@ check_senses_windows: build/deps/libenet.a
 
 # Shared dev arena overview and radar: the headless contract checks, then the real
 # pages rendered at both supported window sizes with pixels read back (needs a display).
-check_arena_overview:
+check_arena_overview: import_runtime_client
 	$(GODOT) --headless --path client --script $(abspath tests/dev_arena_overview_check.gd)
 	$(GODOT) --path client --script $(abspath tests/dev_arena_overview_render_check.gd)
 

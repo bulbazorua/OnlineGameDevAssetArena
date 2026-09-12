@@ -72,8 +72,8 @@ options_valid :: proc(dev: bool, bind, directory, run_id: string) -> bool {
     return true
 }
 
-// Allocate the one diagnostic state and start its writer thread. A release build or an
-// empty directory yields nil, and every other operation accepts nil as "disabled".
+// Release builds and empty directories leave diagnostics off and return nil.
+// Keep the directory and run_id strings alive and unchanged until close returns.
 open :: proc(directory, run_id: string, fingerprint: [32]u8, protocol_version: int, catalog: ^content.Game_Content = nil,
              log_limit: int = LOG_BYTES, seed: u32 = 0) -> ^Diagnostics {
     if directory == "" { return nil }
@@ -106,8 +106,8 @@ open :: proc(directory, run_id: string, fingerprint: [32]u8, protocol_version: i
     return debug
 }
 
-// Stop accepting jobs, let the writer drain and publish its final state, finish the
-// recording, join the thread, then release the buffers and grid copies.
+// Stop all capture calls before closing; close does not block new jobs.
+// Let the writer finish its queued work, then release the owned storage.
 close :: proc(debug: ^Diagnostics) {
     if debug == nil { return }
     sync.mutex_lock(&debug.mutex)

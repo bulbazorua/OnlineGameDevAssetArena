@@ -24,12 +24,17 @@ var badge_live := false
 var fit_label := "Fit: whole arena"
 var legend_lines: Array[String] = []
 var legend_swatches: Dictionary = {}
+var _arena_clip: Control
 var _chrome: Control
 
 
 func _init() -> void:
 	clip_contents = true
 	mouse_filter = Control.MOUSE_FILTER_STOP
+	_arena_clip = Control.new()
+	_arena_clip.clip_contents = true
+	_arena_clip.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	add_child(_arena_clip)
 	_chrome = Chrome.new()
 	_chrome.overview = self
 	_add_full_rect(_chrome)
@@ -108,8 +113,10 @@ func cell_rect(cell: Vector2i) -> Rect2:
 
 func add_layer(layer: Control) -> void:
 	layer.set("frame", self)
-	_add_full_rect(layer)
-	move_child(_chrome, get_child_count() - 1)
+	layer.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	layer.set_anchors_and_offsets_preset(Control.PRESET_TOP_LEFT)
+	_arena_clip.add_child(layer)
+	_layout_layers()
 
 
 func _add_full_rect(child: Control) -> void:
@@ -118,8 +125,20 @@ func _add_full_rect(child: Control) -> void:
 	add_child(child)
 
 
+# Keep layer coordinates aligned with the frame while clipping at the arena edge.
+func _layout_layers() -> void:
+	var rect := arena_rect()
+	_arena_clip.position = rect.position
+	_arena_clip.size = rect.size
+	for layer in _arena_clip.get_children():
+		layer.position = -rect.position
+		layer.size = size
+
+
 func redraw_layers() -> void:
-	for child in get_children(): child.queue_redraw()
+	_layout_layers()
+	for layer in _arena_clip.get_children(): layer.queue_redraw()
+	_chrome.queue_redraw()
 	queue_redraw()
 
 
@@ -138,6 +157,7 @@ func _gui_input(event: InputEvent) -> void:
 
 func _notification(what: int) -> void:
 	if what == NOTIFICATION_MOUSE_EXIT: pointer_left.emit()
+	elif what == NOTIFICATION_RESIZED and _chrome != null: redraw_layers()
 
 
 # Grid lines every few cells so a large map does not become a dense mesh.

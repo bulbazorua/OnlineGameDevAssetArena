@@ -21,6 +21,7 @@ var Fixtures: GDScript
 var content := GameContent.new()
 var output := "res://../build/verification/dev-arena-overview-render"
 var results: Dictionary = {}
+var pixel_probe_count := 0
 var failures: Array[String] = []
 
 
@@ -45,9 +46,9 @@ func _run() -> void:
 	Fixtures.write_json(FIXTURE_DIR + "/scent.json", field)
 	for label: String in PAGE_SIZES: await _render_pages(label, PAGE_SIZES[label])
 	await _render_radars()
-	Fixtures.write_json(output.path_join("render-results.json"), {"results": results, "failures": failures})
+	Fixtures.write_json(output.path_join("render-results.json"), {"results": results, "pixel_probe_count": pixel_probe_count, "failures": failures})
 	for failure in failures: push_error(failure)
-	if failures.is_empty(): print("PASS: three pages and both radars rendered at two window sizes on a rectangular arena; %d pixel probes match independent expectations." % results.size())
+	if failures.is_empty(): print("PASS: three pages and both radars rendered at two window sizes on a rectangular arena; %d pixel probes match independent expectations." % pixel_probe_count)
 	quit(0 if failures.is_empty() else 1)
 
 
@@ -70,12 +71,14 @@ func _capture(viewport: SubViewport, name: String) -> Image:
 
 # One pixel against an independent expectation; the record keeps both colours.
 func _probe(image: Image, point: Vector2, expected: Color, name: String, tolerance := 3.0 / 255.0) -> void:
+	pixel_probe_count += 1
 	var actual := image.get_pixel(int(point.x), int(point.y))
 	results[name] = {"point": [int(point.x), int(point.y)], "actual": actual.to_html(false), "expected": expected.to_html(false)}
 	if not Fixtures.close(Color(actual, 1.0), Color(expected, 1.0), tolerance): failures.append("%s: %s expected %s" % [name, actual.to_html(false), expected.to_html(false)])
 
 
 func _bright(image: Image, point: Vector2, name: String) -> void:
+	pixel_probe_count += 1
 	var actual := image.get_pixel(int(point.x), int(point.y))
 	results[name] = {"point": [int(point.x), int(point.y)], "actual": actual.to_html(false), "expected": "white marker"}
 	if actual.r < 0.85 or actual.g < 0.85 or actual.b < 0.85: failures.append("%s: %s is not the white marker" % [name, actual.to_html(false)])

@@ -6,8 +6,7 @@ Code: [`server/diagnostics/`](../../server/diagnostics) (package `diagnostics`),
 Handback: [diagnostics coding-agent report](../server-diagnostics-coding-agent-report.md).
 Package map: [server architecture](server-architecture.md).
 
-The package owns every byte of developer diagnostic state the host produces: the job
-queue, the writer thread, the per-creature history, the journals, the live feeds and the
+The package owns the job queue, the writer thread, the per-creature history, the journals, the live feeds and the
 match recording. The host hands it copies during the tick; the writer thread turns them
 into versioned files; the Godot developer windows read those files. Nothing in this
 package changes a creature's knowledge, decision, movement, memory or learning, and the
@@ -50,14 +49,14 @@ back into a brain.
 
 ## Public production operations
 
-These are the only procedures the host calls. Each accepts `nil` as "diagnostics
-disabled" and returns without work.
+These are the only procedures the host calls. Operations taking a `^Diagnostics`
+accept `nil` as "diagnostics disabled" and return without work.
 
 | Operation | Called from | What it does with its inputs |
 | --- | --- | --- |
 | `options_valid(dev, bind, directory, run_id)` | `main.odin` `run_host`, before anything is loaded | Pure check of four launch values. Both strings empty means a normal host. Otherwise a debug build, `--dev`, `127.0.0.1`, an absolute directory and a run ID are required; the same two rejection messages as before. |
-| `open(directory, run_id, fingerprint, protocol_version, catalog, log_limit, seed) -> ^Diagnostics` | `main.odin` `run_host`; host tests | Returns `nil` in a release build or with an empty directory. Allocates the one state, hex-encodes the fingerprint, copies every arena's opacity grid for the writer, stores the host's protocol version for the replay header, starts the writer thread. |
-| `close(^Diagnostics)` | `main.odin` (deferred); host tests | Sets `stopping` under the mutex, wakes the writer, joins it, then frees the grid copies, the fingerprint string and the state. |
+| `open(directory, run_id, fingerprint, protocol_version, catalog, log_limit, seed) -> ^Diagnostics` | `main.odin` `run_host`; host tests | Returns `nil` in a release build or with an empty directory. Borrows `directory` and `run_id` until `close` returns. Allocates the one state, hex-encodes the fingerprint, copies every arena's opacity grid for the writer, stores the host's protocol version for the replay header, starts the writer thread. |
+| `close(^Diagnostics)` | `main.odin` (deferred); host tests | Requires the caller to stop all capture calls first. Sets `stopping` under the mutex, wakes the writer, joins it, then frees the grid copies, the fingerprint string and the state. It does not reject new jobs. |
 | `record_decisions(debug, sim, requests, &responses, outcomes)` | `host_simulation.odin`, after `battle_resolve_decisions` | Appends the confirmed `Outcome` node to each response trace (the one intentional mutation of caller-owned temporary data, exactly once per creature per tick), then copies request, response, adopted agent, confirmed result and both receptor audits into a `Record` and enqueues it. |
 | `capture_world(debug, session, packet)` | `host_capture_world` in `host_simulation.odin` | Numbers the capture, copies `packet` (the host's encoded session, valid for its whole length) into the owned `World_Capture.packet`, reads round, tick, map, phase and entity IDs from the borrowed session, enqueues. |
 | `capture_scent(debug, battle, session)` | `host_simulation.odin`, last step of the tick | Under `scent_mutex`: clears the slot outside a bound arena; otherwise, when the field stepped since the last copy, quantizes levels and ages into the slot. No allocation, JSON or file work. |
@@ -115,7 +114,8 @@ everything else is a rule kept by the thread that runs each procedure.
 | `scent_captured_steps` | Main thread | Which field step the slot already holds. Written under `scent_mutex` for convenience, never read by the writer. |
 | `sequence[owner]`, `world_sequence` | Main thread | Counters that include dropped jobs, so a gap in a journal is visible. `replay_close` reads `world_sequence` and `dropped` on the writer thread only after `close` stopped the producer. |
 | `history`, `totals`, `oversized`, `files`, `bytes`, `last_error`, `publish_us`, `fans`, `delivery`, `sense_world`, `replay`, `grids` | Writer thread | Filled by `consume` and the publishers. `grids` is prepared in `open` before the thread starts and read only. |
-| `directory`, `run_id`, `fingerprint`, `protocol_version`, `origin`, `origin_unix_us`, `log_limit`, `seed` | Immutable after `open` | Read by both threads. |
+| `directory`, `run_id` | Borrowed from the caller | Keep the backing bytes alive and unchanged until `close` returns. Read by both threads; not copied or freed by the package. |
+| `fingerprint`, `protocol_version`, `origin`, `origin_unix_us`, `log_limit`, `seed` | Immutable after `open` | Read by both threads. The package owns and frees the fingerprint string. |
 
 ### When borrowed inputs become owned copies
 
@@ -151,9 +151,11 @@ everything else is a rule kept by the thread that runs each procedure.
 - **Cadence.** Live senses and search publish on a fresh sample or every 50 ms, scent
   every 100 ms, the two history snapshots every 250 ms with a drain between them so a
   fresh sample never waits behind both.
-- **Shutdown.** `close` stops the producer, the writer drains what is queued, publishes
-  every feed once more, writes the replay end record with the final counts, closes the
-  journals and exits; then `close` frees the buffers and grid copies.
+- **Shutdown.** The caller stops producing captures before calling `close` and must not
+  start another capture while it runs. `close` signals the writer to drain queued work;
+  it does not prevent new jobs. The writer publishes every feed once more, writes the
+  replay end record with the final counts, closes the journals and exits. `close` joins
+  the writer, then frees the owned storage. Borrowed strings can be released afterward.
 - **Errors.** Every failure is reported once on stderr and kept in `last_error` for the
   snapshot's `writer_error`. Nothing propagates to the host loop.
 
