@@ -27,7 +27,7 @@ destroy :: proc(catalog: ^Game_Content) {
     }
     delete(catalog.characters)
     for terrain in catalog.terrains { delete(terrain.key); delete(terrain.display_name) }
-    for arena in catalog.arenas { delete(arena.key); delete(arena.display_name); delete(arena.cells); delete(arena.elevations); delete(arena.opaque); delete(arena.scent_media) }
+    for arena in catalog.arenas { delete(arena.key); delete(arena.display_name); delete(arena.cells); delete(arena.elevations); delete(arena.opaque); delete(arena.scent_media); delete(arena.navigation) }
     for profile in catalog.senses { delete(profile.key) }
     delete(catalog.terrains)
     delete(catalog.arenas)

@@ -4,6 +4,7 @@ import "core:encoding/json"
 import "core:math"
 import "core:strings"
 import "../perception"
+import obs "../observations"
 
 // Walkability, sight blocking and scent behaviour are independent gameplay
 // rules: each is authored per terrain, never derived from another.
@@ -33,6 +34,8 @@ Arena_Definition :: struct {
     cells: []u16, // Terrain IDs, row-major. No renderer-specific tile indices.
     elevations: []u8, // Discrete land levels; stairs connect adjacent levels.
     opaque: []bool, // Planar sight blocking per cell, baked from terrain at load.
+    navigation: []u8, // Baked ground rules; only the eye's filtered sample reaches a brain.
+    geometry_revision: u32,
     scent_media: []perception.Scent_Medium, // How each cell holds scent, baked from terrain at load.
     spawns: [2][2]int,
 }
@@ -71,11 +74,20 @@ arena_cell_scent_medium :: proc(arena: ^Arena_Definition, catalog: ^Game_Content
 
 // Rebuild the baked per-cell rules after cells change (content load or a test fixture).
 arena_refresh_rules :: proc(arena: ^Arena_Definition, catalog: ^Game_Content) {
+    arena.geometry_revision += 1
+    if len(arena.navigation) != len(arena.cells) {
+        delete(arena.navigation)
+        arena.navigation = make([]u8, len(arena.cells))
+    }
     for y in 0..<arena.height {
         for x in 0..<arena.width {
             index := y * arena.width + x
             arena.opaque[index] = arena_cell_blocks_sight(arena, catalog, {x, y})
             arena.scent_media[index] = arena_cell_scent_medium(arena, catalog, {x, y})
+            terrain := find_terrain(catalog, arena.cells[index])
+            state: obs.Terrain_State = .Solid if terrain == nil || !terrain.walkable else .Clear
+            elevation := arena.elevations[index] if len(arena.elevations) > 0 else u8(0)
+            arena.navigation[index] = obs.terrain_cell(state, elevation, terrain != nil && terrain.key == "stairs")
         }
     }
 }

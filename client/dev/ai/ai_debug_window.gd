@@ -370,6 +370,23 @@ func _render_active_tab() -> void:
 			_search.present(r)
 
 
+func _feedback_fields(state: Dictionary, names: Array) -> Dictionary:
+	var summary: Dictionary = {}
+	for key: String in names:
+		if state.has(key): summary[key] = state[key]
+	return summary
+
+
+func _feedback_summary(state: Dictionary) -> Dictionary:
+	var summary := _feedback_fields(state, ["entity_id", "round_id", "controller", "attention", "intent", "last"])
+	if state.has("search"):
+		summary["search"] = _feedback_fields(state.search, ["state", "transition", "heading", "evidence", "blocked_count"])
+	if state.has("navigation"):
+		summary["navigation"] = _feedback_fields(state.navigation, ["mode", "heading", "passing_side", "speed", "urgency",
+			"intended_distance", "actual_displacement", "failed_ticks", "recovery_pending", "recovery_count"])
+	return summary
+
+
 func _node_selected(node: Dictionary) -> void:
 	_selected_node = node
 	var payload: Dictionary = {"event": node}
@@ -381,7 +398,10 @@ func _node_selected(node: Dictionary) -> void:
 		payload["private_memory_before"] = selected.before.get("memory", selected.before)
 		payload["attention_before"] = selected.before.get("attention", {})
 	elif node.stage == "Decision": payload["reason"] = selected.decision_reason; payload["requested"] = selected.after.last.requested
-	elif node.stage == "Outcome": payload["confirmed_result"] = selected.result; payload["private_state_after_feedback"] = selected.after
+	elif node.stage == "Outcome":
+		payload["confirmed_result"] = selected.result
+		payload["private_feedback_summary"] = _feedback_summary(selected.after)
+		payload["complete_private_state"] = "Recorded payload tab / after"
 	if current and _host_view: payload["host_diagnostics_developer_only"] = selected.host_audit
 	_details.text = JSON.stringify(payload, "  ")
 

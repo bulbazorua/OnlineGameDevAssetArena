@@ -14,11 +14,19 @@ search_evidence_direction :: proc(search: ^Search_Runtime, position: Vector) -> 
 }
 
 search_choose_heading :: proc(search: ^Search_Runtime, ctx: Decision_Context, trace: ^Trace_Buffer, parent: int) {
+    if search_pursuing_target(search) {
+        search_choose_pursuit_heading(search, ctx, trace, parent)
+        return
+    }
     profile := search.profile
     search.scored_tick, search.scored_position = ctx.tick, ctx.position
     search.radius = profile.local_radius + (profile.maximum_local_radius - profile.local_radius) * min(1, f32(ctx.tick - search.evidence_tick) / f32(profile.evidence_ticks))
     evidence := search_evidence_direction(search, ctx.position)
     previous := obs.facing_direction(search.heading)
+    // Start the next foraging leg from the course the body actually took.
+    if search.state == .Extensive_Search && search.leg_active && ctx.motion.maximum_speed > 0 {
+        previous = obs.facing_direction(ctx.facing)
+    }
     search.relocating = false
     if search.state == .Extensive_Search {
         exhausted: f32
@@ -38,8 +46,7 @@ search_choose_heading :: proc(search: ^Search_Runtime, ctx: Decision_Context, tr
         }
         switch search.state {
         case .Pursue, .Last_Known_Position:
-            choice.evidence = 5 * search_alignment(direction, evidence)
-            choice.recent_penalty *= 0.2
+            unreachable()
         case .Investigate:
             smelled := search.evidence == .Scent || search.evidence == .Scent_Memory
             choice.evidence = (profile.scent_weight if smelled else profile.cue_weight) * search.confidence * search_alignment(direction, evidence)
@@ -61,7 +68,6 @@ search_choose_heading :: proc(search: ^Search_Runtime, ctx: Decision_Context, tr
     }
     duration := profile.extensive_leg_ticks
     if search.state == .Intensive_Search || search.state == .Investigate { duration = profile.intensive_leg_ticks }
-    if search.state == .Pursue || search.state == .Last_Known_Position { duration = 6 }
     if search.relocating { duration = profile.relocation_ticks }
     search.leg_active, search.leg_deadline = true, ctx.tick + duration
     trace_add(trace, parent, .State, .Selected, "Commit heading until deadline, fresh evidence or blocked movement", "deadline / relocation", f64(search.leg_deadline), 1 if search.relocating else 0, obs.facing_direction(search.heading))

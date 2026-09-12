@@ -62,6 +62,7 @@ Vision_Sample :: struct {
     focused_count: int,
     cues: [MAX_OBSERVATIONS]Peripheral_Cue,
     cue_count: int,
+    terrain: Terrain_Sample,
 }
 
 // Anonymous scent categories. A class says what kind of thing left a trace,

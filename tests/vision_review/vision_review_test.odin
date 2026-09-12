@@ -65,7 +65,8 @@ replacing_one_creature_preserves_the_other_creatures_private_state :: proc(t: ^t
     catalog: content.Game_Content
     if !testing.expect(t, content.load(&catalog, "client/content/data")) { return }
     defer content.destroy(&catalog)
-    sim: simulation.Simulation
+    // Look around without wandering away from the test's visible subjects.
+    sim := simulation.Simulation{observe_only = true}
     sim.session.map_id = catalog.arenas[0].id
     sim.session.round_id = 1
     for &player in sim.session.players {

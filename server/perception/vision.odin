@@ -35,6 +35,8 @@ Vision_Query :: struct {
     observer: Observer,
     profile: obs.Vision_Profile,
     grid: Opacity_Grid,
+    terrain: []u8,
+    terrain_revision: u32,
     candidates: [MAX_CANDIDATES]Candidate,
     candidate_count: int,
 }
@@ -79,7 +81,7 @@ vision_add_cue :: proc(sample: ^obs.Vision_Sample, audit: ^Vision_Audit, sector:
 // Classify every candidate against range, field and terrain occlusion. Focused
 // sightings keep observed detail; peripheral detections become anonymous cues
 // quantized to a 45° sector and a two-band range before delivery.
-vision_sample :: proc(query: Vision_Query, sample_id, sample_tick, delivered_tick: u32) -> (sample: obs.Vision_Sample, audit: Vision_Audit) {
+vision_sample :: proc(query: Vision_Query, sample_id, sample_tick, delivered_tick: u32, terrain_cache: ^Terrain_Cache = nil) -> (sample: obs.Vision_Sample, audit: Vision_Audit) {
     sample.sample_id, audit.sample_id = sample_id, sample_id
     sample.observer, sample.round_id = query.observer.entity_id, query.observer.round_id
     sample.sample_tick, sample.delivered_tick = sample_tick, delivered_tick
@@ -92,6 +94,7 @@ vision_sample :: proc(query: Vision_Query, sample_id, sample_tick, delivered_tic
     cos_field := f32(math.cos(f64(query.profile.overall_fov_degrees) * 0.5 * math.PI / 180))
     limit := query.profile.range + BOUNDARY_TOLERANCE
     audit.origin_opaque = !grid_contains_point(query.grid, eye) || grid_cell_opaque(query.grid, grid_cell_of(query.grid, eye))
+    sample.terrain = vision_terrain_cached(query, terrain_cache)
     count := clamp(query.candidate_count, 0, MAX_CANDIDATES)
     audit.candidate_count = count
     candidates := query.candidates

@@ -71,9 +71,9 @@ journal_write :: proc(debug: ^Diagnostics, record: ^Record) {
 // One creature's recent-history snapshot: the expensive part of the writer's work.
 @(private)
 publish_owner :: proc(debug: ^Diagnostics, owner: int, dropped: u64) {
-    views: [HISTORY]Record_View
     total := debug.totals[owner]
     count := int(min(total, u64(HISTORY)))
+    views := debug.publish_views[:count]
     for j in 0..<count {
         index := int((total - u64(count) + u64(j)) % HISTORY)
         views[j] = record_view(debug, &debug.history[owner][index])

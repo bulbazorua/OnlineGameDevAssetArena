@@ -39,6 +39,7 @@ Diagnostics :: struct {
     origin_unix_us: i64,
     sense_world: Sense_World,
     history: [simulation.MAX_PLAYERS][HISTORY]Record,
+    publish_views: [HISTORY]Record_View, // Writer-only reusable snapshot workspace.
     totals: [simulation.MAX_PLAYERS]u64,
     oversized: [simulation.MAX_PLAYERS]u64,
     files: [simulation.MAX_PLAYERS]^os.File,

@@ -113,7 +113,7 @@ everything else is a rule kept by the thread that runs each procedure.
 | `scent_capture` | Shared, under `scent_mutex` | `capture_scent` writes, `publish_scent` copies out. The lock covers one 64 KiB copy at most. |
 | `scent_captured_steps` | Main thread | Which field step the slot already holds. Written under `scent_mutex` for convenience, never read by the writer. |
 | `sequence[owner]`, `world_sequence` | Main thread | Counters that include dropped jobs, so a gap in a journal is visible. `replay_close` reads `world_sequence` and `dropped` on the writer thread only after `close` stopped the producer. |
-| `history`, `totals`, `oversized`, `files`, `bytes`, `last_error`, `publish_us`, `fans`, `delivery`, `sense_world`, `replay`, `grids` | Writer thread | Filled by `consume` and the publishers. `grids` is prepared in `open` before the thread starts and read only. |
+| `history`, `publish_views`, `totals`, `oversized`, `files`, `bytes`, `last_error`, `publish_us`, `fans`, `delivery`, `sense_world`, `replay`, `grids` | Writer thread | Filled by `consume` and the publishers. `publish_views` is reusable snapshot workspace in the heap-owned state. `grids` is prepared in `open` before the thread starts and read only. |
 | `directory`, `run_id` | Borrowed from the caller | Keep the backing bytes alive and unchanged until `close` returns. Read by both threads; not copied or freed by the package. |
 | `fingerprint`, `protocol_version`, `origin`, `origin_unix_us`, `log_limit`, `seed` | Immutable after `open` | Read by both threads. The package owns and frees the fingerprint string. |
 
@@ -131,6 +131,9 @@ everything else is a rule kept by the thread that runs each procedure.
   into a heap temporary under the same lock and then encodes without holding it.
 - The writer's `Record_View` slices (`nodes`, `candidates`, `sight_fan`) point into the
   writer-owned history entry only for the duration of one `json.marshal`.
+- Its input and agent fields remain values: the JSON encoder does not accept
+  typed pointers to those structs. `publish_owner` fills the heap-owned
+  `publish_views` workspace and finishes encoding before reusing it for another owner.
 
 ## Gating, queue and shutdown behavior
 

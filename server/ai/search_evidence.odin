@@ -22,7 +22,7 @@ search_focused_opponent :: proc(search: ^Search_Runtime, sample: obs.Vision_Samp
 
 search_accept_target :: proc(search: ^Search_Runtime, sample: obs.Vision_Sample, index: int, tick: u32) {
     sighting := sample.focused[index]
-    if search.acquisition_count == 0 || search.target != sighting.subject || sample.sample_tick - search.target_tick > 18 {
+    if search.acquisition_count == 0 || search.target != sighting.subject {
         search.acquired_tick = tick
         search.acquisition_count += 1
     }
@@ -39,12 +39,17 @@ search_read_evidence :: proc(agent: ^Agent, ctx: Decision_Context, config: Obser
     sample := ctx.senses.vision
     was_visible := search.target_visible
     search.target_visible = false
+    remembers_target := search.target != 0 && ctx.tick - search.target_tick < config.memory.focused_retention_ticks
     current := sample.status == .Sampled && ctx.tick - sample.sample_tick <= max(1, sample.profile.sample_interval * 2)
     if current {
         chosen := search_focused_opponent(search, sample, ctx.position)
-        if chosen >= 0 { search_accept_target(search, sample, chosen, ctx.tick); return }
+        if chosen >= 0 && (!remembers_target || sample.focused[chosen].subject == search.target) {
+            if !remembers_target { search.target = 0 }
+            search_accept_target(search, sample, chosen, ctx.tick)
+            return
+        }
     }
-    if search.target != 0 && ctx.tick - search.target_tick < config.memory.focused_retention_ticks {
+    if remembers_target {
         search.evidence = .Focused_Memory
         search.confidence = search_memory_strength(ctx.tick, search.target_tick, config.memory.focused_retention_ticks)
         if distance_between(ctx.position, search.target_position) > search.profile.arrival_radius {

@@ -41,8 +41,15 @@ search_decide :: proc(agent: ^Agent, ctx: Decision_Context, config: Observe_Conf
         observe_aim_at_position(agent, ctx, search.target_position, "Opponent nearby: hold at observation distance", "Turn toward the observed opponent", trace, state)
         search.leg_active = false
     } else {
-        if !search.leg_active || tick_due(ctx.tick, search.leg_deadline) { search_choose_heading(search, ctx, trace, state) }
+        pursuing := search_pursuing_target(search)
+        if pursuing || !search.leg_active || tick_due(ctx.tick, search.leg_deadline) { search_choose_heading(search, ctx, trace, state) }
         agent.intent = {kind = .Move, direction = obs.facing_direction(search.heading)}
+        if pursuing {
+            agent.intent.direction = search_pursuit_direction(search, ctx.position)
+            agent.intent.approach = {active = true, position = search.target_position,
+                arrival_distance = search.profile.pursuit_distance if search.state == .Pursue else search.profile.arrival_radius,
+                clearance = agent.navigation.profile.clearance}
+        }
     }
     agent.attention = {state = .Observe if search.target_visible else .Reacquire, evidence = search.evidence,
         subject = search.target, observation_id = search.observation_id, evidence_tick = search.evidence_tick,
@@ -54,11 +61,16 @@ search_record_result :: proc(agent: ^Agent, result: Action_Result, tick: u32) {
     if agent.intent.kind != .Move { return }
     search := &agent.search
     if result.kind == .Terrain_Blocked || result.kind == .Anchor_Limit {
-        search.blocked_origin = search.position
-        index := int(search.heading)
-        search.blocked[index] = true
-        search.blocked_until[index] = tick + search.profile.blocked_ticks
-        search.blocked_count += 1
-        search.leg_active = false
+        search_note_blockage(search, tick)
     }
+}
+
+@(private)
+search_note_blockage :: proc(search: ^Search_Runtime, tick: u32) {
+    search.blocked_origin = search.position
+    index := int(search.heading)
+    search.blocked[index] = true
+    search.blocked_until[index] = tick + search.profile.blocked_ticks
+    search.blocked_count += 1
+    search.leg_active = false
 }

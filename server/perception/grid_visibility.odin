@@ -90,7 +90,8 @@ segment_extent_in_lane :: proc(a, d: [2]f64, major, lane: int) -> (lo, hi: f64) 
 // Supercover test: every opaque cell whose closed square touches the segment blocks
 // it, including corner-only and edge-aligned touches, opaque origin or target cells
 // and endpoints outside the map. `reach` is the clear fraction before the first block.
-sight_probe :: proc(grid: Opacity_Grid, from, to: obs.Vector) -> (clear: bool, reach: f32) {
+@(private)
+grid_sight_test :: proc(grid: Opacity_Grid, from, to: obs.Vector, need_nearest: bool) -> (clear: bool, reach: f32) {
     if !grid_valid(grid) || !grid_contains_point(grid, from) || !grid_contains_point(grid, to) { return false, 0 }
     tile := f64(grid.tile_size)
     a := [2]f64{f64(from.x) / tile, f64(from.y) / tile}
@@ -113,6 +114,7 @@ sight_probe :: proc(grid: Opacity_Grid, from, to: obs.Vector) -> (clear: bool, r
             if !grid.opaque[cell.y * grid.width + cell.x] { continue }
             entry, touches := segment_reaches_cell(a.x, a.y, d.x, d.y, f64(cell.x), f64(cell.y))
             if !touches { continue }
+            if !need_nearest { return false, 0 }
             clear = false
             nearest = min(nearest, entry)
         }
@@ -120,7 +122,11 @@ sight_probe :: proc(grid: Opacity_Grid, from, to: obs.Vector) -> (clear: bool, r
     return clear, f32(nearest)
 }
 
+sight_probe :: proc(grid: Opacity_Grid, from, to: obs.Vector) -> (clear: bool, reach: f32) {
+    return grid_sight_test(grid, from, to, true)
+}
+
 line_of_sight :: proc(grid: Opacity_Grid, from, to: obs.Vector) -> bool {
-    clear, _ := sight_probe(grid, from, to)
+    clear, _ := grid_sight_test(grid, from, to, false)
     return clear
 }

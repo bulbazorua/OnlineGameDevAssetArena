@@ -75,7 +75,10 @@ battle_prepare_decisions :: proc(battle: ^Battle_Runtime, session: ^Session, cat
         ctx := ai.Decision_Context{entity_id = character.entity_id, round_id = session.round_id, tick = session.server_tick,
             position = character.position, facing = character_facing_to_observation(character.facing), can_act = can_act,
             turn_ready = character_turn_ready(&battle.actions[index], session.server_tick), senses = inputs[index],
-            own_emitter = battle.scent.emitters[index].emitter}
+            own_emitter = battle.scent.emitters[index].emitter,
+            motion = {maximum_speed = battle.limits.speed,
+                footprint_radius = content.find_character(catalog, character.definition_id).footprint_radius,
+                tick_seconds = 1.0 / SIMULATION_HZ}}
         requests[index] = {agent = battle.agents[index], ctx = ctx, config = battle.config, trace = trace}
     }
     return

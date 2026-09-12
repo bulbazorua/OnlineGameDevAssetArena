@@ -18,6 +18,7 @@ Vision_Receptor :: struct {
     schedule: Receptor_Schedule,
     last: obs.Vision_Sample,
     audit: perception.Vision_Audit, // Host-only; never reaches a worker.
+    terrain_cache: perception.Terrain_Cache,
 }
 
 Olfaction_Receptor :: struct {
@@ -78,6 +79,8 @@ Vision_World :: struct {
     characters: [MAX_PLAYERS]Character,
     trainers: [MAX_PLAYERS]Trainer,
     grid: perception.Opacity_Grid,
+    terrain: []u8,
+    terrain_revision: u32,
 }
 
 @(private = "file")
@@ -91,7 +94,8 @@ vision_receptor_sample :: proc(receptor: ^Vision_Receptor, world: ^Vision_World,
     case .Due:
         sample_id := schedule_next(&receptor.schedule, tick, receptor.profile.sample_interval)
         query := perception.Vision_Query{observer = {entity_id = self.entity_id, round_id = round,
-            pose = {self.position, character_facing_to_observation(self.facing)}}, profile = receptor.profile, grid = world.grid}
+            pose = {self.position, character_facing_to_observation(self.facing)}}, profile = receptor.profile,
+            grid = world.grid, terrain = world.terrain, terrain_revision = world.terrain_revision}
         other := world.characters[1 - index]
         query.candidates[0] = {entity_id = other.entity_id, kind = .Creature, appearance_id = other.definition_id, position = other.position,
             facing = character_facing_to_observation(other.facing), locomotion = obs.Locomotion(u8(other.locomotion))}
@@ -100,7 +104,7 @@ vision_receptor_sample :: proc(receptor: ^Vision_Receptor, world: ^Vision_World,
                 facing = character_facing_to_observation(trainer.facing), locomotion = .Idle if trainer.locomotion == .Idle else .Walk}
         }
         query.candidate_count = 1 + MAX_PLAYERS
-        receptor.last, receptor.audit = perception.vision_sample(query, sample_id, tick, tick)
+        receptor.last, receptor.audit = perception.vision_sample(query, sample_id, tick, tick, &receptor.terrain_cache)
         is_new = true
     }
     return receptor.last, is_new
@@ -129,7 +133,10 @@ olfaction_receptor_sample :: proc(receptor: ^Olfaction_Receptor, field: ^percept
 @(private)
 senses_prepare :: proc(receptors: ^[MAX_PLAYERS]Receptor, field: ^perception.Scent_Field, session: ^Session, catalog: ^content.Game_Content, can_act: bool) -> (inputs: [MAX_PLAYERS]obs.Sense_Input) {
     world := Vision_World{characters = session.characters, trainers = session.trainers}
-    if arena := content.find_arena(catalog, session.map_id); arena != nil { world.grid = content.arena_opacity_grid(arena) }
+    if arena := content.find_arena(catalog, session.map_id); arena != nil {
+        world.grid, world.terrain = content.arena_opacity_grid(arena), arena.navigation
+        world.terrain_revision = arena.geometry_revision
+    }
     for index in 0..<MAX_PLAYERS {
         receptor := &receptors[index]
         input := &inputs[index]

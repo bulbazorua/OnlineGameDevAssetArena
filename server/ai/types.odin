@@ -9,7 +9,7 @@ Vector :: obs.Vector
 Facing :: obs.Facing
 Controller :: enum { Observe, Search }
 Intent_Kind :: enum { Hold, Move, Face }
-Intent :: struct { kind: Intent_Kind, direction: Vector, facing: Facing }
+Intent :: struct { kind: Intent_Kind, direction: Vector, facing: Facing, approach: Move_Approach }
 Result_Kind :: enum { Held, Moved, Terrain_Blocked, Anchor_Limit, Locked, Invalid_Request, Preparing, Turned, Turn_Pending }
 Action_Result :: struct { kind: Result_Kind, displacement: Vector, facing: Facing }
 Decision_Reason :: enum { Locked, Scan, Orient, Observe, Reacquire, Search_Extensive, Search_Intensive, Investigate, Last_Known_Position, Pursue }
@@ -38,6 +38,7 @@ Decision_Context :: struct {
     turn_ready: bool, // The resolver's turn interval has elapsed.
     senses: obs.Sense_Input,
     own_emitter: obs.Scent_Emitter, // What this body itself smells like: own knowledge.
+    motion: Motion_Constraints,
 }
 Decision_Record :: struct {
     tick: u32,
@@ -51,6 +52,7 @@ Agent :: struct {
     memory: Visual_Memory,
     scent: Scent_Memory,
     search: Search_Runtime,
+    navigation: Navigation_Runtime,
     attention: Attention,
     intent: Intent,
     last: Decision_Record,

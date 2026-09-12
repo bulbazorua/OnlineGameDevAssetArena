@@ -62,8 +62,9 @@ extreme_record :: proc(absurd_floats: bool) -> Record {
         for &entry in agent.memory.focused { entry = {0xffffffff, .Creature, 65535, point, .North_West, .Walk, 0xffffffff, 0xffffffff, 0xffffffff, 0xffffffff} }
         for &entry in agent.memory.cues { entry = {255, .Near, .North_West, 0xffffffff, 0xffffffff, 0xffffffff, 0xffffffff} }
         agent.attention = {.Reacquire, .Focused_Memory, 0xffffffff, 0xffffffff, 0xffffffff, .North_West, 0xffffffff, true}
-        agent.intent = {.Face, point, .North_West}
-        agent.last = {0xffffffff, .Reacquire, {.Face, point, .North_West}, {.Invalid_Request, point, .North_West}}
+        agent.intent = {kind = .Face, direction = point, facing = .North_West}
+        agent.last = {tick = 0xffffffff, reason = .Reacquire, requested = agent.intent,
+            result = {kind = .Invalid_Request, displacement = point, facing = .North_West}}
     }
     record.decision_reason, record.result = .Reacquire, {.Invalid_Request, point, .North_West}
     record.position_after, record.facing_after, record.facing = point, 255, 255
@@ -101,6 +102,22 @@ worst_case_record_fits_the_declared_ceilings :: proc(t: ^testing.T) {
     testing.expect(t, HISTORY * RECORD_LIMIT + 64 * 1024 < 4 * 1024 * 1024, "a full snapshot could exceed the reader cap")
     testing.expect(t, 2 * RECORD_LIMIT + 4096 < REPLAY_LINE_LIMIT && REPLAY_LINE_LIMIT < 128 * 1024)
     fmt.printfln("[AI debugger] Worst-case schema-%d record: %d bytes of %d", TRACE_SCHEMA, len(data), RECORD_LIMIT)
+}
+
+@(test)
+record_views_keep_serializable_copies_without_sharing_mutation :: proc(t: ^testing.T) {
+    debug := new(Diagnostics)
+    defer free(debug)
+    record := extreme_record(false)
+    view := record_view(debug, &record)
+    testing.expect(t, view.input == record.input && view.before == record.before && view.after == record.after)
+    owned, owned_error := json.marshal(record.before, {use_enum_names = true})
+    defer delete(owned)
+    copied, copied_error := json.marshal(view.before, {use_enum_names = true})
+    defer delete(copied)
+    testing.expect(t, owned_error == nil && copied_error == nil && string(owned) == string(copied))
+    record.before.intent.kind = .Hold
+    testing.expect(t, view.before.intent.kind == .Face, "a record mutation changed its serialized view")
 }
 
 @(test)
