@@ -94,7 +94,8 @@ pursuit_keeps_its_target_through_distraction_without_refreshing_old_evidence :: 
     }
     expired := search_test_context(280)
     agent_decide(&agent, expired, config)
-    testing.expect(t, agent.search.target == 0 && agent.memory.focused_count == 0)
+    testing.expect(t, agent.search.target == 0)
+    testing.expect(t, agent.memory.focused_count == 1, "expiring the pursued target must keep the newer unrelated sighting")
     testing.expect(t, agent.search.evidence_tick == 100 && agent.search.state == .Intensive_Search)
 }
 
